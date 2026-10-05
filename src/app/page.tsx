@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, ArrowDownLeft, ArrowDownRight, ArrowLeftRight, ArrowRight, ArrowUpRight, Bell, Bot, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Copy, CreditCard, Eye, EyeOff, FileText, Hourglass, History, LayoutDashboard, LockKeyhole, LogOut, Menu, MoreHorizontal, Paperclip, Plus, RefreshCw, Search, Settings2, ShieldCheck, Signal, SlidersHorizontal, Sparkles, TrendingDown, TrendingUp, UploadCloud, UserRound, UsersRound, Wallet, WandSparkles, X, XCircle, Zap } from "lucide-react";
 import { assets as catalogAssets, getAsset as getCatalogAsset, money, marketPrice, type Asset, type ChartPoint, type ChartPeriod, type MarketSnapshot } from "@/lib/market";
 import { DEPOSIT_METHODS, MAX_RECEIPT_BYTES, type DepositMethod } from "@/lib/deposits";
+import { WITHDRAWAL_METHODS, type WithdrawalMethod } from "@/lib/withdrawals";
 import MarketChart from "@/components/market-chart";
 
 type Page = "Overview" | "Portfolio" | "Trade" | "Trading Bot" | "Markets" | "Plans" | "Copy Trading" | "Deposit" | "Withdraw" | "Trading Signals" | "Transactions" | "Trade History";
 type DepositAccount = { id: string; method: string; label: string; instructions: string };
 type DepositRequest = { id: string; method: string; amount: string; destinationLabel: string | null; reference: string | null; note: string | null; status: string; adminNote: string | null; receiptFilename: string; createdAt: string; reviewedAt: string | null };
+type WithdrawalRequest = { id: string; method: string; methodLabel: string | null; amount: string; destination: string; note: string | null; status: string; adminNote: string | null; createdAt: string; reviewedAt: string | null };
 type AppData = { user: { id: string; name: string; email: string | null; isDemo: boolean; role: string; cashBalance: number }; holdings: { id: string; symbol: string; quantity: string; avgPrice: string }[]; trades: { id: string; symbol: string; side: string; quantity: string; price: string; total: string; createdAt: string }[]; transactions: { id: string; type: string; amount: string; description: string; createdAt: string }[]; bots: { id: string; name: string; strategy: string; amount: string; active: boolean; createdAt: string }[]; copiedTraders: { id: string; traderKey: string; amount: string }[]; plan: string };
 const preview: AppData = {
   user: { id: "preview", name: "Alex Morgan", email: null, isDemo: true, role: "user", cashBalance: 12540.50 },
@@ -69,7 +71,6 @@ export default function HomePage() {
   const [symbol, setSymbol] = useState("BTC");
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [tradeAmount, setTradeAmount] = useState("");
-  const [fundAmount, setFundAmount] = useState("");
   const [depositMethod, setDepositMethod] = useState<DepositMethod>("crypto");
   const [depositAccounts, setDepositAccounts] = useState<DepositAccount[]>([]);
   const [depositAccountsLoaded, setDepositAccountsLoaded] = useState(false);
@@ -81,6 +82,13 @@ export default function HomePage() {
   const [receiptError, setReceiptError] = useState("");
   const [depositSubmitting, setDepositSubmitting] = useState(false);
   const [myDeposits, setMyDeposits] = useState<DepositRequest[]>([]);
+  const [withdrawalMethod, setWithdrawalMethod] = useState<WithdrawalMethod>("crypto");
+  const [withdrawalMethodLabelInput, setWithdrawalMethodLabelInput] = useState("");
+  const [withdrawalAmount, setWithdrawalAmount] = useState("");
+  const [withdrawalDestination, setWithdrawalDestination] = useState("");
+  const [withdrawalNote, setWithdrawalNote] = useState("");
+  const [withdrawalSubmitting, setWithdrawalSubmitting] = useState(false);
+  const [myWithdrawals, setMyWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [botAmount, setBotAmount] = useState("500");
   const [botStrategy, setBotStrategy] = useState("DCA");
   const [botSymbol, setBotSymbol] = useState("BTC");
@@ -188,7 +196,26 @@ export default function HomePage() {
   const firstName = data.user.name.split(" ")[0];
   const date = useMemo(() => new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date()), []);
   const trade = async (e: React.FormEvent) => { e.preventDefault(); if (!quoteLive || currentAsset.price <= 0) return notify("Live quotes are unavailable. Paper trading is paused.", true); const usd = Number(tradeAmount); if (!usd || usd <= 0) return notify("Enter a valid USD amount", true); const quantity = Math.floor((usd / currentAsset.price) * 1e8) / 1e8; if (!quantity) return notify("Amount is too small for this asset", true); const ok = await action({ action: "trade", symbol, side, quantity }); if (ok) { setTradeAmount(""); void refreshMarket(); } };
-  const withdraw = async (e: React.FormEvent) => { e.preventDefault(); const ok = await action({ action: "withdrawal", amount: Number(fundAmount) }); if (ok) setFundAmount(""); };
+  const loadMyWithdrawals = async () => { try { const res = await fetch("/api/withdrawals", { cache: "no-store" }); if (!res.ok) return; const result = await res.json(); if (Array.isArray(result.requests)) setMyWithdrawals(result.requests); } catch { /* ignore */ } };
+  useEffect(() => { if (ready && page === "Withdraw") void loadMyWithdrawals(); }, [ready, page]);
+  const submitWithdrawal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (withdrawalSubmitting) return;
+    const amount = Number(withdrawalAmount);
+    if (!amount || amount <= 0) return notify("Enter a valid withdrawal amount.", true);
+    if (amount > data.user.cashBalance) return notify("You can't request more than your available balance.", true);
+    if (withdrawalDestination.trim().length < 3) return notify("Tell us where to send your payout.", true);
+    if (withdrawalMethod === "other" && withdrawalMethodLabelInput.trim().length < 2) return notify("Tell us the name of the platform you'd like to be paid through.", true);
+    setWithdrawalSubmitting(true);
+    try {
+      const res = await fetch("/api/withdrawals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method: withdrawalMethod, methodLabel: withdrawalMethodLabelInput, amount, destination: withdrawalDestination, note: withdrawalNote }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      notify(result.message || "Withdrawal request submitted");
+      setWithdrawalAmount(""); setWithdrawalDestination(""); setWithdrawalNote(""); setWithdrawalMethodLabelInput("");
+      await Promise.all([loadMyWithdrawals(), refresh()]);
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setWithdrawalSubmitting(false); }
+  };
   const assetRow = (asset: Asset, i: number, showCap = false) =>
     <tr key={asset.symbol} onClick={() => { setSymbol(asset.symbol); go("Trade"); }} className="clickable-row">
       <td className="rank-cell">{asset.rank ? String(asset.rank).padStart(2, "0") : String(i + 1).padStart(2, "0")}</td>
@@ -346,7 +373,44 @@ export default function HomePage() {
           </section>
         </div>
       </>}
-      {page === "Withdraw" && <><PageTitle title="Withdraw funds" description="Move funds out of your simulated trading balance."/><div className="fund-layout"><section className="panel funding-panel"><div className="funding-icon withdraw"><ArrowUpRight size={26}/></div><h2>Withdraw from your wallet</h2><p className="funding-desc">Choose an amount to remove from your paper-trading balance.</p><form onSubmit={withdraw}><label className="input-label">Amount (USD)</label><div className="amount-input funding-input"><span>$</span><input type="number" min="1" step="0.01" placeholder="0.00" value={fundAmount} onChange={e=>setFundAmount(e.target.value)} required/><span>USD</span></div><div className="quick-amounts">{[100,500,1000,5000].map(n=><button type="button" key={n} onClick={()=>setFundAmount(String(n))}>${n.toLocaleString()}</button>)}</div><div className="funding-balance"><span>Available wallet balance</span><strong>{money(data.user.cashBalance)}</strong></div><button className="primary-btn full-btn" disabled={loading || !ready}>{loading ? "Processing..." : "Withdraw demo funds"}<ArrowRight size={17}/></button></form><div className="funding-safe"><ShieldCheck size={18}/><span>This is a simulation. No real money or payment method is involved.</span></div></section><div className="fund-side"><div className="wallet-visual"><div className="wallet-visual-top"><span>NexaTrade</span><Activity size={24}/></div><div><small>AVAILABLE BALANCE</small><strong>{money(data.user.cashBalance)}</strong></div><div className="wallet-visual-bottom"><span>SIMULATED USD WALLET</span><span>•••• 2026</span></div></div><div className="panel tips-panel"><h3>How it works</h3><div><span>01</span><p>Enter an amount in USD above.</p></div><div><span>02</span><p>Confirm your simulated transaction.</p></div><div><span>03</span><p>Your balance updates instantly.</p></div></div></div></div></>}
+      {page === "Withdraw" && <>
+        <PageTitle title="Withdraw funds" description="Request a payout to any platform you choose. An admin reviews and sends it before it's final."/>
+        <div className="deposit-note-banner"><Hourglass size={17}/><span>The requested amount is <strong>reserved from your available balance</strong> right away. An admin manually sends your payout, then approves the request here — or rejects it and the amount is returned to your balance.</span></div>
+        <div className="deposit-layout">
+          <section className="panel deposit-panel">
+            <SectionHead title="1. Choose a payout method" subtitle="Pick how you'd like to receive funds"/>
+            <div className="deposit-method-grid">
+              {WITHDRAWAL_METHODS.map(m => <button type="button" key={m.id} className={`deposit-method-btn ${withdrawalMethod === m.id ? "chosen" : ""}`} onClick={() => setWithdrawalMethod(m.id)}>
+                {m.id === "crypto" ? <Wallet size={18}/> : m.id === "bank_transfer" ? <CreditCard size={18}/> : m.id === "paypal" ? <ArrowLeftRight size={18}/> : m.id === "cashapp" ? <Activity size={18}/> : m.id === "giftcard" ? <Sparkles size={18}/> : <SlidersHorizontal size={18}/>}
+                <span>{m.label}</span>
+              </button>)}
+            </div>
+            <p className="deposit-method-blurb">{WITHDRAWAL_METHODS.find(m => m.id === withdrawalMethod)?.blurb}</p>
+            <form className="deposit-form" onSubmit={submitWithdrawal}>
+              {withdrawalMethod === "other" && <><label className="input-label">Platform name</label><input className="text-input" placeholder="e.g. Skrill, Payoneer, Zelle..." value={withdrawalMethodLabelInput} onChange={e => setWithdrawalMethodLabelInput(e.target.value)} maxLength={60}/></>}
+              <label className="input-label">2. Where should we send it?</label>
+              <textarea className="text-input deposit-textarea" placeholder={WITHDRAWAL_METHODS.find(m => m.id === withdrawalMethod)?.placeholder} value={withdrawalDestination} onChange={e => setWithdrawalDestination(e.target.value)} rows={3} maxLength={500} required/>
+              <label className="input-label">3. Amount to withdraw (USD)</label>
+              <div className="amount-input funding-input"><span>$</span><input type="number" min="1" step="0.01" placeholder="0.00" value={withdrawalAmount} onChange={e => setWithdrawalAmount(e.target.value)} required/><span>USD</span></div>
+              <div className="quick-amounts">{[100, 500, 1000, 5000].map(n => <button type="button" key={n} onClick={() => setWithdrawalAmount(String(n))}>${n.toLocaleString()}</button>)}</div>
+              <div className="funding-balance"><span>Available wallet balance</span><strong>{money(data.user.cashBalance)}</strong></div>
+              <label className="input-label">Note for the admin (optional)</label>
+              <textarea className="text-input deposit-textarea" placeholder="Anything else the reviewer should know" value={withdrawalNote} onChange={e => setWithdrawalNote(e.target.value)} maxLength={1000} rows={2}/>
+              <button className="primary-btn full-btn" disabled={withdrawalSubmitting || !ready}>{withdrawalSubmitting ? "Submitting..." : "Submit withdrawal for review"}<ArrowRight size={17}/></button>
+              <p className="simulation-note"><ShieldCheck size={13}/> No automatic payout is sent. Funds leave only after an admin verifies and approves this request.</p>
+            </form>
+          </section>
+          <section className="panel deposit-history-panel">
+            <SectionHead title="Your withdrawal requests" subtitle={`${myWithdrawals.length} submitted`}/>
+            {myWithdrawals.length ? <div className="deposit-request-list">{myWithdrawals.map(r => <div className="deposit-request-item" key={r.id}>
+              <div className="deposit-request-top"><strong>{money(Number(r.amount))}</strong><span className={`status-pill ${r.status}`}><span/>{r.status === "pending" ? "Pending review" : r.status === "approved" ? "Approved" : "Rejected"}</span></div>
+              <p>{WITHDRAWAL_METHODS.find(m => m.id === r.method)?.id === "other" ? (r.methodLabel || "Other") : WITHDRAWAL_METHODS.find(m => m.id === r.method)?.label}{" · "}{r.destination}</p>
+              {r.adminNote && r.status === "rejected" && <p className="deposit-admin-note"><AlertTriangle size={13}/> {r.adminNote}</p>}
+              <div className="deposit-request-bottom"><span>{new Date(r.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span></div>
+            </div>)}</div> : <EmptyState icon={ArrowUpRight} title="No withdrawal requests yet" text="Submit your first withdrawal above and it will show up here while it's reviewed."/>}
+          </section>
+        </div>
+      </>}
       {page === "Transactions" && <><PageTitle title="Transactions" description="Keep track of every deposit, withdrawal, and plan charge."><button className="outline-btn" onClick={()=>go("Deposit")}><Plus size={17}/> Add funds</button></PageTitle><div className="stats-grid three">{card(ArrowDownLeft,"Total deposited",money(data.transactions.filter(t=>t.type==="deposit").reduce((s,t)=>s+Number(t.amount),0)),<span>All time</span>, "green")}{card(ArrowUpRight,"Total withdrawn",money(data.transactions.filter(t=>t.type==="withdrawal").reduce((s,t)=>s+Number(t.amount),0)),<span>All time</span>, "orange")}{card(Wallet,"Current cash balance",money(data.user.cashBalance),<span>Available to trade</span>)}</div><section className="panel"><SectionHead title="Transaction history" subtitle="A record of your wallet activity"/>{data.transactions.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Transaction</th><th>Type</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>{data.transactions.map(t=><tr key={t.id}><td><div className="transaction-cell"><span className={`transaction-icon ${t.type}`}>{t.type==="deposit"?<ArrowDownLeft size={19}/>:t.type==="withdrawal"?<ArrowUpRight size={19}/>:<Sparkles size={19}/>}</span><strong>{t.description}</strong></div></td><td className="capitalize">{t.type}</td><td className="muted-cell">{new Date(t.createdAt).toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"})}</td><td className={`table-strong ${t.type==="deposit"?"positive-text":""}`}>{t.type==="deposit"?"+":"-"}{money(Number(t.amount))}</td><td><span className="status-pill"><span/>Completed</span></td></tr>)}</tbody></table></div>:<EmptyState icon={CreditCard} title="No transactions yet" text="Deposits and withdrawals will show up here."/>}</section></>}
       {page === "Trade History" && <><PageTitle title="Trade history" description="Review every buy and sell order in your paper-trading account."><button className="outline-btn" onClick={()=>go("Trade")}><Plus size={17}/> New trade</button></PageTitle><div className="stats-grid three">{card(ArrowLeftRight,"Total trades",String(data.trades.length),<span>Completed orders</span>)}{card(ArrowDownLeft,"Buy orders",String(data.trades.filter(t=>t.side==="buy").length),<span>Assets purchased</span>,"green")}{card(ArrowUpRight,"Sell orders",String(data.trades.filter(t=>t.side==="sell").length),<span>Assets sold</span>,"orange")}</div><section className="panel"><div className="section-head"><div><h2>All trades</h2><p>Your complete order history</p></div><div className="segmented">{["All","Buy","Sell"].map(t=><button key={t} className={historyTab===t?"active":""} onClick={()=>setHistoryTab(t)}>{t}</button>)}</div></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Asset</th><th>Type</th><th>Quantity</th><th>Price</th><th>Total</th><th>Date</th><th>Status</th></tr></thead><tbody>{data.trades.filter(t=>historyTab==="All" || t.side===historyTab.toLowerCase()).map(t=>{const a=getAsset(t.symbol);return <tr key={t.id}><td><div className="coin-cell">{a&&<AssetIcon asset={a} size={34}/>}<div><strong>{a?.name}</strong><span>{t.symbol}</span></div></div></td><td><span className={`type-pill ${t.side}`}>{t.side==="buy"?<ArrowDownLeft size={13}/>:<ArrowUpRight size={13}/>} {t.side}</span></td><td className="table-strong">{fmtQty(Number(t.quantity))} {t.symbol}</td><td>{marketPrice(Number(t.price))}</td><td className="table-strong">{money(Number(t.total))}</td><td className="muted-cell">{new Date(t.createdAt).toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric"})}</td><td><span className="status-pill"><span/>Completed</span></td></tr>})}</tbody></table>{data.trades.filter(t=>historyTab==="All" || t.side===historyTab.toLowerCase()).length===0&&<EmptyState icon={History} title="No trades found" text="Your completed orders will appear here."/>}</div></section></>}
       <footer className="main-footer"><span>© 2026 NexaTrade. Built for curious traders.</span><span><ShieldCheck size={14}/> Simulation only · Not financial advice</span></footer>

@@ -61,11 +61,11 @@ The current market snapshot is available at `/api/market`; chart data at `/api/m
 - Registration and login with salted password hashes and HTTP-only database-backed sessions
 - Live market data, coin images, interactive historical charts, and paper-trading dashboard
 - Portfolio valuation, server-verified simulated buy/sell execution, and trade history
-- Manual, admin-reviewed deposits (see below) and simulated withdrawals with a transaction ledger
+- Manual, admin-reviewed deposits and withdrawals with a transaction ledger (see below)
 - Trading bot strategy configurations, copy-trader watchlists, market observations, and plan subscriptions
 - Responsive interface using the NexaTrade blue theme
 
-**Simulation notice:** Market prices are real provider quotes, but there is no live exchange execution, autonomous bot execution, or automatic trade copying. Withdrawals remain fully simulated. Deposits, however, model a real-world manual payment flow — see below.
+**Simulation notice:** Market prices are real provider quotes, but there is no live exchange execution, autonomous bot execution, or automatic trade copying. Deposits and withdrawals model a real-world manual payment flow — see below.
 
 ## Deposits: manual, admin-reviewed (no payment processor)
 
@@ -77,6 +77,18 @@ Deposits are **not instant and not automatic**. The flow is designed for a busin
 4. An admin opens the receipt, then **Approves** (credits the claimed amount to the user's balance and logs a transaction) or **Rejects** (with a required reason shown to the user). Each request can only be reviewed once.
 
 No card numbers, bank credentials, or payment processor are ever handled by the app — it only stores the receipt file and the destination account admins choose to publish, so there is nothing resembling PCI-scoped data to protect. Receipts are stored as base64 in Postgres to avoid needing extra object-storage infrastructure; if you expect large volumes of large files, swap `receiptData` in `src/db/schema.ts` for a pointer to S3/Vercel Blob/etc. instead (see `src/lib/deposits.ts` for the current size/type limits).
+
+## Withdrawals: manual, admin-reviewed, pay-out to any platform
+
+Withdrawals mirror the deposit flow but run in reverse — the user picks where **they** want to be paid instead of an admin-configured destination:
+
+1. A user opens **Withdraw**, picks a payout method (Cryptocurrency, Bank transfer, PayPal, Cash App, Gift card, or **Other** for anything not listed), and enters where to send the money (their own wallet address, bank details, email, $Cashtag, etc.) plus an amount and optional note.
+2. On submission the requested amount is **immediately held** — deducted from the user's available cash balance — so it can't be spent on a trade or withdrawn twice while the request is pending. The request appears under "Your withdrawal requests" and for admins under **Admin panel → Withdrawal requests**.
+3. The admin manually sends the payout to the destination the user provided (outside the app, using whatever rails that method requires), then either:
+   - **Approves** — finalizes the request and logs it in the transaction ledger. No further balance change happens since the amount was already held.
+   - **Rejects** (with a required reason shown to the user) — the held amount is automatically refunded back to the user's available balance.
+
+Each request can only be reviewed once, and nothing is ever paid out automatically — approving only marks that the admin already sent the funds manually.
 
 ### Creating your first admin
 

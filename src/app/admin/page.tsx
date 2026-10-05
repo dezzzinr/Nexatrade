@@ -3,11 +3,17 @@
 import { useEffect, useState } from "react";
 import { Activity, AlertTriangle, ArrowLeft, Check, Clock3, LockKeyhole, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
 import { DEPOSIT_METHODS, depositMethodLabel, type DepositMethod } from "@/lib/deposits";
+import { withdrawalMethodLabel } from "@/lib/withdrawals";
 
 type AdminUser = { id: string; name: string; email: string | null };
 type DepositRequestRow = {
   id: string; method: string; amount: string; destinationLabel: string | null; reference: string | null; note: string | null;
   status: string; adminNote: string | null; receiptFilename: string; receiptMimeType: string; createdAt: string; reviewedAt: string | null;
+  userId: string; userName: string; userEmail: string | null;
+};
+type WithdrawalRequestRow = {
+  id: string; method: string; methodLabel: string | null; amount: string; destination: string; note: string | null;
+  status: string; adminNote: string | null; createdAt: string; reviewedAt: string | null;
   userId: string; userName: string; userEmail: string | null;
 };
 type DepositAccountRow = { id: string; method: string; label: string; instructions: string; isActive: boolean; createdAt: string; updatedAt: string };
@@ -16,7 +22,7 @@ const money = (n: number) => n.toLocaleString("en-US", { style: "currency", curr
 export default function AdminPage() {
   const [admin, setAdmin] = useState<AdminUser | null>(null);
   const [authState, setAuthState] = useState<"loading" | "denied" | "ok">("loading");
-  const [tab, setTab] = useState<"deposits" | "accounts">("deposits");
+  const [tab, setTab] = useState<"deposits" | "withdrawals" | "accounts">("deposits");
   const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "rejected" | "all">("pending");
   const [requests, setRequests] = useState<DepositRequestRow[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
@@ -24,6 +30,13 @@ export default function AdminPage() {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
+
+  const [wStatusFilter, setWStatusFilter] = useState<"pending" | "approved" | "rejected" | "all">("pending");
+  const [wRequests, setWRequests] = useState<WithdrawalRequestRow[]>([]);
+  const [wRequestsLoading, setWRequestsLoading] = useState(false);
+  const [wBusyId, setWBusyId] = useState<string | null>(null);
+  const [wRejectingId, setWRejectingId] = useState<string | null>(null);
+  const [wRejectNote, setWRejectNote] = useState("");
 
   const [accounts, setAccounts] = useState<DepositAccountRow[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
@@ -79,6 +92,31 @@ export default function AdminPage() {
       setRejectNote("");
       await loadRequests(statusFilter);
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setBusyId(null); }
+  };
+
+  const loadWithdrawalRequests = async (status = wStatusFilter) => {
+    setWRequestsLoading(true);
+    try {
+      const query = status === "all" ? "" : `?status=${status}`;
+      const res = await fetch(`/api/admin/withdrawals${query}`, { cache: "no-store" });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Unable to load withdrawal requests");
+      setWRequests(result.requests ?? []);
+    } catch (error) { notify(error instanceof Error ? error.message : "Unable to load withdrawal requests", true); } finally { setWRequestsLoading(false); }
+  };
+  useEffect(() => { if (authState === "ok" && tab === "withdrawals") void loadWithdrawalRequests(wStatusFilter); }, [authState, tab, wStatusFilter]);
+
+  const reviewWithdrawal = async (id: string, action: "approve" | "reject", adminNote?: string) => {
+    setWBusyId(id);
+    try {
+      const res = await fetch(`/api/admin/withdrawals/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, adminNote }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      notify(result.message || "Done");
+      setWRejectingId(null);
+      setWRejectNote("");
+      await loadWithdrawalRequests(wStatusFilter);
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setWBusyId(null); }
   };
 
   const createAccount = async (e: React.FormEvent) => {
@@ -144,9 +182,10 @@ export default function AdminPage() {
       </div>
     </header>
     <main className="admin-content">
-      <div className="page-heading"><div><div className="eyebrow">ADMIN PANEL</div><h1>Deposit review</h1><p>Verify receipts submitted by users and manage where they're told to send funds.</p></div></div>
+      <div className="page-heading"><div><div className="eyebrow">ADMIN PANEL</div><h1>Deposits &amp; withdrawals</h1><p>Verify receipts and payout requests submitted by users, and manage where deposits are sent.</p></div></div>
       <div className="admin-tabs">
         <button className={tab === "deposits" ? "active" : ""} onClick={() => setTab("deposits")}>Deposit requests</button>
+        <button className={tab === "withdrawals" ? "active" : ""} onClick={() => setTab("withdrawals")}>Withdrawal requests</button>
         <button className={tab === "accounts" ? "active" : ""} onClick={() => setTab("accounts")}>Deposit destinations</button>
       </div>
 
@@ -183,6 +222,44 @@ export default function AdminPage() {
               </div> : <>
                 <button className="primary-btn small" disabled={busyId === r.id} onClick={() => review(r.id, "approve")}><Check size={14}/> Approve &amp; credit</button>
                 <button className="outline-btn small reject-outline" disabled={busyId === r.id} onClick={() => setRejectingId(r.id)}><X size={14}/> Reject</button>
+              </>}
+            </div>}
+          </div>)}
+        </div>
+      </section>}
+
+      {tab === "withdrawals" && <section className="panel admin-panel">
+        <div className="section-head">
+          <div><h2>Withdrawal requests</h2><p>The requested amount is already held from the user&apos;s balance. Send the payout yourself, then approve here to finalize, or reject to refund it.</p></div>
+          <div className="admin-filter-row">
+            <div className="segmented">{(["pending", "approved", "rejected", "all"] as const).map(s => <button key={s} className={wStatusFilter === s ? "active" : ""} onClick={() => setWStatusFilter(s)}>{s[0].toUpperCase() + s.slice(1)}</button>)}</div>
+            <button className="outline-btn small" onClick={() => loadWithdrawalRequests(wStatusFilter)}><RefreshCw size={13} className={wRequestsLoading ? "spin" : ""}/> Refresh</button>
+          </div>
+        </div>
+        <div className="admin-request-list">
+          {wRequests.length === 0 && !wRequestsLoading && <div className="empty-state"><span className="empty-icon"><Clock3 size={27}/></span><h3>No {wStatusFilter === "all" ? "" : wStatusFilter} withdrawal requests</h3><p>Submitted withdrawal requests will appear here.</p></div>}
+          {wRequests.map(r => <div className="admin-request-card" key={r.id}>
+            <div className="admin-request-head">
+              <div><strong>{money(Number(r.amount))}</strong><span className="admin-request-method">{withdrawalMethodLabel(r.method, r.methodLabel)}</span></div>
+              <span className={`status-pill ${r.status}`}><span/>{r.status === "pending" ? "Pending review" : r.status === "approved" ? "Approved" : "Rejected"}</span>
+            </div>
+            <div className="admin-request-meta">
+              <div><span>User</span><strong>{r.userName}</strong><small>{r.userEmail}</small></div>
+              <div><span>Submitted</span><strong>{new Date(r.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</strong></div>
+              <div><span>Send payout to</span><strong>{r.destination}</strong></div>
+            </div>
+            {r.note && <p className="admin-request-note"><strong>User note:</strong> {r.note}</p>}
+            {r.adminNote && <p className="admin-request-note admin-note-flag"><AlertTriangle size={13}/> {r.adminNote}</p>}
+            {r.status === "pending" && <div className="admin-request-actions">
+              {wRejectingId === r.id ? <div className="admin-reject-form">
+                <textarea className="text-input" placeholder="Reason for rejection (shown to the user; the held amount is refunded)" value={wRejectNote} onChange={e => setWRejectNote(e.target.value)} rows={2}/>
+                <div className="admin-reject-buttons">
+                  <button className="outline-btn small" onClick={() => { setWRejectingId(null); setWRejectNote(""); }}>Cancel</button>
+                  <button className="primary-btn small reject-btn" disabled={wBusyId === r.id || !wRejectNote.trim()} onClick={() => reviewWithdrawal(r.id, "reject", wRejectNote)}><X size={14}/> Confirm reject &amp; refund</button>
+                </div>
+              </div> : <>
+                <button className="primary-btn small" disabled={wBusyId === r.id} onClick={() => reviewWithdrawal(r.id, "approve")}><Check size={14}/> Approve (I sent it)</button>
+                <button className="outline-btn small reject-outline" disabled={wBusyId === r.id} onClick={() => setWRejectingId(r.id)}><X size={14}/> Reject &amp; refund</button>
               </>}
             </div>}
           </div>)}

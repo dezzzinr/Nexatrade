@@ -70,16 +70,7 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({ success: true, price: asset.price, total, message: `${side === "buy" ? "Bought" : "Sold"} ${quantity} ${symbol} at ${marketPrice(asset.price)}` });
     }
-    if (action === "withdrawal") {
-      if (!validAmount || amount < 1) return bad("Enter a valid amount of at least $1.");
-      await db.transaction(async (tx) => {
-        const [wallet] = await tx.select().from(users).where(eq(users.id, user.id)).for("update");
-        if (Number(wallet.cashBalance) < amount) throw new Error("Insufficient available balance.");
-        await tx.update(users).set({ cashBalance: sql`${users.cashBalance} - ${amount}` }).where(eq(users.id, user.id));
-        await tx.insert(transactions).values({ userId: user.id, type: "withdrawal", amount: amount.toFixed(2), description: "Demo wallet withdrawal" });
-      });
-      return NextResponse.json({ success: true, message: `Withdrew $${amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} successfully` });
-    }
+    if (action === "withdrawal") return bad("Withdrawals now require admin review. Go to Withdraw to get started.");
     if (action === "deposit") return bad("Deposits now require submitting a payment receipt for admin review. Go to Deposit to get started.");
     if (action === "createBot") {
       if (!validAmount || amount < 10 || !["DCA", "Grid", "Momentum"].includes(body.strategy)) return bad("Choose a strategy and an allocation of at least $10.");

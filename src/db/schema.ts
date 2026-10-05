@@ -5,17 +5,10 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   email: text("email").unique(),
   passwordHash: text("password_hash"),
-  cashBalance: numeric("cash_balance", {
-    precision: 18,
-    scale: 2,
-  }).notNull().default("0"),
+  cashBalance: numeric("cash_balance", { precision: 18, scale: 2 }).notNull().default("12540.50"),
   isDemo: boolean("is_demo").notNull().default(false),
-
   role: text("role").notNull().default("user"),
-
-  createdAt: timestamp("created_at", {
-    withTimezone: true,
-  }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const sessions = pgTable("sessions", {
@@ -112,3 +105,25 @@ export const depositRequests = pgTable("deposit_requests", {
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// A user-submitted request to pay funds OUT to a destination they choose
+// (their own crypto wallet, bank account, PayPal, Cash App, gift card, or
+// any other platform). The requested amount is held (deducted from
+// cashBalance) immediately on submission so it can't be spent or withdrawn
+// twice while pending; it is refunded automatically if an admin rejects the
+// request, or finalized (ledgered as a withdrawal) if approved.
+export const withdrawalRequests = pgTable("withdrawal_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  method: text("method").notNull(), // crypto | bank_transfer | paypal | cashapp | giftcard | other
+  methodLabel: text("method_label"), // user-provided platform name when method = "other"
+  amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+  destination: text("destination").notNull(), // where the user wants funds sent (address/account/email/tag/etc.)
+  note: text("note"), // optional note from the user
+  status: text("status").notNull().default("pending"), // pending | approved | rejected
+  adminNote: text("admin_note"), // reason for rejection / note from admin
+  reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
