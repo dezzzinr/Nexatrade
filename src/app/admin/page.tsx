@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, AlertTriangle, ArrowLeft, Check, Clock3, LockKeyhole, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeft, Check, Clock3, LockKeyhole, RefreshCw, ShieldCheck, Trash2, UsersRound, X } from "lucide-react";
 import { DEPOSIT_METHODS, depositMethodLabel, type DepositMethod } from "@/lib/deposits";
 import { withdrawalMethodLabel } from "@/lib/withdrawals";
+import { AVATAR_COLORS, RISK_LEVELS, type AvatarColor, type RiskLevel } from "@/lib/copy-trading";
 
 type AdminUser = { id: string; name: string; email: string | null };
 type DepositRequestRow = {
@@ -17,12 +18,13 @@ type WithdrawalRequestRow = {
   userId: string; userName: string; userEmail: string | null;
 };
 type DepositAccountRow = { id: string; method: string; label: string; instructions: string; isActive: boolean; createdAt: string; updatedAt: string };
+type CopyTraderRow = { id: string; name: string; handle: string; avatarInitials: string; avatarColor: string; focus: string; riskLevel: string; returnPercent: string; winRate: string; subscriptionAmount: string; isActive: boolean; activeSubscribers: number; createdAt: string };
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 export default function AdminPage() {
   const [admin, setAdmin] = useState<AdminUser | null>(null);
   const [authState, setAuthState] = useState<"loading" | "denied" | "ok">("loading");
-  const [tab, setTab] = useState<"deposits" | "withdrawals" | "accounts">("deposits");
+  const [tab, setTab] = useState<"deposits" | "withdrawals" | "accounts" | "traders">("deposits");
   const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "rejected" | "all">("pending");
   const [requests, setRequests] = useState<DepositRequestRow[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
@@ -47,6 +49,15 @@ export default function AdminPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
   const [editInstructions, setEditInstructions] = useState("");
+
+  const [traders, setTraders] = useState<CopyTraderRow[]>([]);
+  const [tradersLoading, setTradersLoading] = useState(false);
+  const [traderCreating, setTraderCreating] = useState(false);
+  const emptyTraderForm = { name: "", handle: "", avatarColor: "blue" as AvatarColor, focus: "", riskLevel: "Moderate" as RiskLevel, returnPercent: "", winRate: "", subscriptionAmount: "" };
+  const [traderForm, setTraderForm] = useState(emptyTraderForm);
+  const [editingTraderId, setEditingTraderId] = useState<string | null>(null);
+  const [editTraderForm, setEditTraderForm] = useState(emptyTraderForm);
+  const [traderBusyId, setTraderBusyId] = useState<string | null>(null);
 
   const notify = (text: string, error = false) => { setToast({ text, error }); setTimeout(() => setToast(null), 4500); };
 
@@ -163,6 +174,66 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); }
   };
 
+  const loadTraders = async () => {
+    setTradersLoading(true);
+    try {
+      const res = await fetch("/api/admin/copy-traders", { cache: "no-store" });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Unable to load copy traders");
+      setTraders(result.traders ?? []);
+    } catch (error) { notify(error instanceof Error ? error.message : "Unable to load copy traders", true); } finally { setTradersLoading(false); }
+  };
+  useEffect(() => { if (authState === "ok" && tab === "traders") void loadTraders(); }, [authState, tab]);
+
+  const createTrader = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (traderCreating) return;
+    if (traderForm.name.trim().length < 2) return notify("Enter the trader's name.", true);
+    if (traderForm.handle.trim().length < 2) return notify("Enter a handle, e.g. @alex.trades.", true);
+    if (traderForm.focus.trim().length < 1) return notify("Enter the trader's focus, e.g. BTC, ETH.", true);
+    if (!traderForm.subscriptionAmount || Number(traderForm.subscriptionAmount) < 0) return notify("Enter a valid subscription price (0 or more).", true);
+    setTraderCreating(true);
+    try {
+      const res = await fetch("/api/admin/copy-traders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(traderForm) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      notify(`${result.trader?.name ?? "Trader"} added to the roster`);
+      setTraderForm(emptyTraderForm);
+      await loadTraders();
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setTraderCreating(false); }
+  };
+  const toggleTraderActive = async (t: CopyTraderRow) => {
+    setTraderBusyId(t.id);
+    try {
+      const res = await fetch(`/api/admin/copy-traders/${t.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !t.isActive }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      await loadTraders();
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setTraderBusyId(null); }
+  };
+  const saveTraderEdit = async (id: string) => {
+    setTraderBusyId(id);
+    try {
+      const res = await fetch(`/api/admin/copy-traders/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editTraderForm) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      notify("Trader profile updated");
+      setEditingTraderId(null);
+      await loadTraders();
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setTraderBusyId(null); }
+  };
+  const removeTrader = async (t: CopyTraderRow) => {
+    if (!window.confirm(`Delete ${t.name} from the roster? This only works if they have no subscription history.`)) return;
+    setTraderBusyId(t.id);
+    try {
+      const res = await fetch(`/api/admin/copy-traders/${t.id}`, { method: "DELETE" });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      notify("Trader removed");
+      await loadTraders();
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setTraderBusyId(null); }
+  };
+
   if (authState === "loading") return <div className="admin-shell admin-center"><Clock3 size={22}/><p>Loading admin panel…</p></div>;
   if (authState === "denied") return <div className="admin-shell admin-center">
     <div className="panel admin-denied">
@@ -187,6 +258,7 @@ export default function AdminPage() {
         <button className={tab === "deposits" ? "active" : ""} onClick={() => setTab("deposits")}>Deposit requests</button>
         <button className={tab === "withdrawals" ? "active" : ""} onClick={() => setTab("withdrawals")}>Withdrawal requests</button>
         <button className={tab === "accounts" ? "active" : ""} onClick={() => setTab("accounts")}>Deposit destinations</button>
+        <button className={tab === "traders" ? "active" : ""} onClick={() => setTab("traders")}>Copy traders</button>
       </div>
 
       {tab === "deposits" && <section className="panel admin-panel">
@@ -305,6 +377,58 @@ export default function AdminPage() {
               </div>;
             })}
             {accounts.length === 0 && !accountsLoading && <div className="empty-state"><span className="empty-icon"><ShieldCheck size={27}/></span><h3>No destinations configured</h3><p>Add one on the left so users know where to send funds.</p></div>}
+          </div>
+        </section>
+      </section>}
+
+      {tab === "traders" && <section className="admin-accounts-layout">
+        <section className="panel admin-panel">
+          <div className="section-head"><div><h2>Add a copy trader</h2><p>Set their profile, stats, and the price users pay for a 7-day subscription.</p></div></div>
+          <form className="admin-account-form" onSubmit={createTrader}>
+            <label className="input-label">Name</label>
+            <input className="text-input" placeholder="e.g. Alex Morgan" value={traderForm.name} onChange={e => setTraderForm({ ...traderForm, name: e.target.value })} maxLength={80}/>
+            <label className="input-label">Handle</label>
+            <input className="text-input" placeholder="e.g. @alex.trades" value={traderForm.handle} onChange={e => setTraderForm({ ...traderForm, handle: e.target.value })} maxLength={40}/>
+            <label className="input-label">Avatar color</label>
+            <div className="select-wrap"><select value={traderForm.avatarColor} onChange={e => setTraderForm({ ...traderForm, avatarColor: e.target.value as AvatarColor })}>{AVATAR_COLORS.map(c => <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>)}</select></div>
+            <label className="input-label">Focus</label>
+            <input className="text-input" placeholder="e.g. BTC, ETH" value={traderForm.focus} onChange={e => setTraderForm({ ...traderForm, focus: e.target.value })} maxLength={120}/>
+            <label className="input-label">Risk level</label>
+            <div className="select-wrap"><select value={traderForm.riskLevel} onChange={e => setTraderForm({ ...traderForm, riskLevel: e.target.value as RiskLevel })}>{RISK_LEVELS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
+            <label className="input-label">Return % (30-day)</label>
+            <input className="text-input" type="number" step="0.01" placeholder="e.g. 42.80" value={traderForm.returnPercent} onChange={e => setTraderForm({ ...traderForm, returnPercent: e.target.value })}/>
+            <label className="input-label">Win rate %</label>
+            <input className="text-input" type="number" step="0.01" min="0" max="100" placeholder="e.g. 78" value={traderForm.winRate} onChange={e => setTraderForm({ ...traderForm, winRate: e.target.value })}/>
+            <label className="input-label">Subscription price (per 7 days)</label>
+            <input className="text-input" type="number" step="0.01" min="0" placeholder="e.g. 49.00" value={traderForm.subscriptionAmount} onChange={e => setTraderForm({ ...traderForm, subscriptionAmount: e.target.value })}/>
+            <button className="primary-btn full-btn" disabled={traderCreating}>{traderCreating ? "Adding..." : "Add trader"}</button>
+          </form>
+        </section>
+        <section className="panel admin-panel">
+          <div className="section-head"><div><h2>Roster</h2><p>{traders.length} trader{traders.length === 1 ? "" : "s"} · active subscribers shown live</p></div><button className="outline-btn small" onClick={loadTraders}><RefreshCw size={13} className={tradersLoading ? "spin" : ""}/> Refresh</button></div>
+          <div className="admin-account-list">
+            {traders.map(t => <div className={`admin-account-item ${t.isActive ? "" : "inactive"}`} key={t.id}>
+              {editingTraderId === t.id ? <div className="admin-account-edit">
+                <input className="text-input" value={editTraderForm.name} onChange={e => setEditTraderForm({ ...editTraderForm, name: e.target.value })} maxLength={80}/>
+                <input className="text-input" value={editTraderForm.handle} onChange={e => setEditTraderForm({ ...editTraderForm, handle: e.target.value })} maxLength={40}/>
+                <div className="select-wrap"><select value={editTraderForm.avatarColor} onChange={e => setEditTraderForm({ ...editTraderForm, avatarColor: e.target.value as AvatarColor })}>{AVATAR_COLORS.map(c => <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>)}</select></div>
+                <input className="text-input" value={editTraderForm.focus} onChange={e => setEditTraderForm({ ...editTraderForm, focus: e.target.value })} maxLength={120}/>
+                <div className="select-wrap"><select value={editTraderForm.riskLevel} onChange={e => setEditTraderForm({ ...editTraderForm, riskLevel: e.target.value as RiskLevel })}>{RISK_LEVELS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
+                <input className="text-input" type="number" step="0.01" value={editTraderForm.returnPercent} onChange={e => setEditTraderForm({ ...editTraderForm, returnPercent: e.target.value })} placeholder="Return %"/>
+                <input className="text-input" type="number" step="0.01" value={editTraderForm.winRate} onChange={e => setEditTraderForm({ ...editTraderForm, winRate: e.target.value })} placeholder="Win rate %"/>
+                <input className="text-input" type="number" step="0.01" min="0" value={editTraderForm.subscriptionAmount} onChange={e => setEditTraderForm({ ...editTraderForm, subscriptionAmount: e.target.value })} placeholder="Subscription price"/>
+                <div className="admin-reject-buttons"><button className="outline-btn small" onClick={() => setEditingTraderId(null)}>Cancel</button><button className="primary-btn small" disabled={traderBusyId === t.id} onClick={() => saveTraderEdit(t.id)}>Save</button></div>
+              </div> : <>
+                <div className="admin-account-item-top"><strong>{t.name} <span style={{ color: "#9aa4b7", fontWeight: 500 }}>{t.handle}</span></strong><span className={`status-pill ${t.isActive ? "approved" : "rejected"}`}><span/>{t.isActive ? "Active" : "Hidden"}</span></div>
+                <p>{t.focus} · {t.riskLevel} risk · {Number(t.returnPercent) >= 0 ? "+" : ""}{Number(t.returnPercent).toFixed(2)}% return · {Number(t.winRate).toFixed(0)}% win rate · {money(Number(t.subscriptionAmount))}/7d · {t.activeSubscribers} active subscriber{t.activeSubscribers === 1 ? "" : "s"}</p>
+                <div className="admin-account-item-actions">
+                  <button className="outline-btn small" onClick={() => { setEditingTraderId(t.id); setEditTraderForm({ name: t.name, handle: t.handle, avatarColor: t.avatarColor as AvatarColor, focus: t.focus, riskLevel: t.riskLevel as RiskLevel, returnPercent: t.returnPercent, winRate: t.winRate, subscriptionAmount: t.subscriptionAmount }); }}>Edit</button>
+                  <button className="outline-btn small" disabled={traderBusyId === t.id} onClick={() => toggleTraderActive(t)}>{t.isActive ? "Deactivate" : "Activate"}</button>
+                  <button className="outline-btn small danger-outline" disabled={traderBusyId === t.id} onClick={() => removeTrader(t)}><Trash2 size={13}/> Delete</button>
+                </div>
+              </>}
+            </div>)}
+            {traders.length === 0 && !tradersLoading && <div className="empty-state"><span className="empty-icon"><UsersRound size={27}/></span><h3>No traders yet</h3><p>Add one on the left to let users subscribe.</p></div>}
           </div>
         </section>
       </section>}

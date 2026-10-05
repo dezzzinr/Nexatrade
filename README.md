@@ -62,10 +62,10 @@ The current market snapshot is available at `/api/market`; chart data at `/api/m
 - Live market data, coin images, interactive historical charts, and paper-trading dashboard
 - Portfolio valuation, server-verified simulated buy/sell execution, and trade history
 - Manual, admin-reviewed deposits and withdrawals with a transaction ledger (see below)
-- Trading bot strategy configurations, copy-trader watchlists, market observations, and plan subscriptions
+- Trading bot strategy configurations, admin-managed copy traders with paid 7-day subscriptions, market observations, and plan subscriptions
 - Responsive interface using the NexaTrade blue theme
 
-**Simulation notice:** Market prices are real provider quotes, but there is no live exchange execution, autonomous bot execution, or automatic trade copying. Deposits and withdrawals model a real-world manual payment flow — see below.
+**Simulation notice:** Market prices are real provider quotes, but there is no live exchange execution, autonomous bot execution, or automatic trade copying — subscribing to a copy trader grants access to their published stats for 7 days, it does not mirror real trades. Deposits and withdrawals model a real-world manual payment flow — see below.
 
 ## Deposits: manual, admin-reviewed (no payment processor)
 
@@ -89,6 +89,16 @@ Withdrawals mirror the deposit flow but run in reverse — the user picks where 
    - **Rejects** (with a required reason shown to the user) — the held amount is automatically refunded back to the user's available balance.
 
 Each request can only be reviewed once, and nothing is ever paid out automatically — approving only marks that the admin already sent the funds manually.
+
+## Copy trading: admin-managed traders, 7-day paid subscriptions
+
+Copy trading is fully admin-curated — there is no seeded or hardcoded trader roster:
+
+1. An admin adds traders under **Admin panel → Copy traders** (`/admin`), setting their name, handle, avatar color, focus (e.g. "BTC, ETH"), risk level (Low/Moderate/High), reported return %, win rate, and — required — the **subscription price** charged for a 7-day subscription.
+2. Users browse the roster on the **Copy Trading** page, which shows each trader's stats, price, and a live **active subscribers** count (computed in real time from non-expired subscriptions, not an admin-entered vanity number).
+3. Clicking **Subscribe** charges the trader's current price from the user's paper-trading cash balance (free/$0 traders can be subscribed to with no charge) and logs a `subscription` transaction. The subscription starts immediately and **expires in exactly 7 days** — there is no auto-renewal; users resubscribe once it lapses.
+4. A user can only hold one active subscription per trader at a time; re-subscribing before expiry is blocked with a friendly message showing when it unlocks again. Past and current subscriptions are listed in a "My subscriptions" history panel with countdowns.
+5. Admins can edit a trader's profile/stats/price at any time (price changes only affect future subscriptions — past subscriptions keep the price that was charged at the time), toggle them active/hidden, or delete them. Deleting is blocked with a clear message if the trader has subscription history; deactivate instead to retire them while preserving records.
 
 ### Creating your first admin
 

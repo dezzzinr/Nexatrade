@@ -55,13 +55,36 @@ export const bots = pgTable("bots", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const copiedTraders = pgTable("copied_traders", {
+// Admin-managed copy-trading profiles. Admins curate the roster and set the
+// price users pay to subscribe; "active subscribers" is computed from
+// copySubscriptions rather than stored here.
+export const copyTraders = pgTable("copy_traders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  handle: text("handle").notNull(), // e.g. "@olivia.trades"
+  avatarInitials: text("avatar_initials").notNull(),
+  avatarColor: text("avatar_color").notNull().default("blue"), // purple | orange | pink | blue | green | red
+  focus: text("focus").notNull(), // e.g. "BTC, ETH"
+  riskLevel: text("risk_level").notNull().default("Moderate"), // Low | Moderate | High
+  returnPercent: numeric("return_percent", { precision: 6, scale: 2 }).notNull().default("0"), // e.g. 42.80 for "+42.80%"
+  winRate: numeric("win_rate", { precision: 5, scale: 2 }).notNull().default("0"), // 0-100
+  subscriptionAmount: numeric("subscription_amount", { precision: 18, scale: 2 }).notNull(), // price for a 7-day subscription
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A user's paid subscription to copy a trader's strategy for a fixed
+// 7-day window. Each renewal is its own row so history is preserved even
+// as prices change. "Active" = expiresAt is in the future.
+export const copySubscriptions = pgTable("copy_subscriptions", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  traderKey: text("trader_key").notNull(),
-  amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [uniqueIndex("copied_user_trader_idx").on(table.userId, table.traderKey)]);
+  traderId: uuid("trader_id").notNull().references(() => copyTraders.id),
+  amount: numeric("amount", { precision: 18, scale: 2 }).notNull(), // price paid, snapshot at subscribe time
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
 
 export const subscriptions = pgTable("subscriptions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -69,6 +92,7 @@ export const subscriptions = pgTable("subscriptions", {
   plan: text("plan").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
 
 // Admin-managed destination accounts shown to users for a given deposit
 // method (e.g. a specific crypto wallet address, bank account, PayPal

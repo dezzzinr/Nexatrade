@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { users, holdings, trades, transactions, bots, copiedTraders, subscriptions } from "@/db/schema";
+import { users, holdings, trades, transactions, bots, subscriptions } from "@/db/schema";
 import { desc, eq, and, sql } from "drizzle-orm";
 import { getUser, createDemoUser, setSession } from "@/lib/auth";
 import { getAsset, marketPrice } from "@/lib/market";
@@ -14,15 +14,14 @@ export async function GET(request: NextRequest) {
     let user = await getUser(request);
     let fresh = false;
     if (!user) { user = await createDemoUser(); fresh = true; }
-    const [h, t, tx, b, c, p] = await Promise.all([
+    const [h, t, tx, b, p] = await Promise.all([
       db.select().from(holdings).where(eq(holdings.userId, user.id)),
       db.select().from(trades).where(eq(trades.userId, user.id)).orderBy(desc(trades.createdAt)).limit(50),
       db.select().from(transactions).where(eq(transactions.userId, user.id)).orderBy(desc(transactions.createdAt)).limit(50),
       db.select().from(bots).where(eq(bots.userId, user.id)).orderBy(desc(bots.createdAt)),
-      db.select().from(copiedTraders).where(eq(copiedTraders.userId, user.id)),
       db.select().from(subscriptions).where(eq(subscriptions.userId, user.id)).orderBy(desc(subscriptions.createdAt)).limit(1),
     ]);
-    const response = NextResponse.json({ user: { id: user.id, name: user.name, email: user.email, isDemo: user.isDemo, role: user.role, cashBalance: Number(user.cashBalance) }, holdings: h, trades: t, transactions: tx, bots: b, copiedTraders: c, plan: p[0]?.plan ?? "Starter" });
+    const response = NextResponse.json({ user: { id: user.id, name: user.name, email: user.email, isDemo: user.isDemo, role: user.role, cashBalance: Number(user.cashBalance) }, holdings: h, trades: t, transactions: tx, bots: b, plan: p[0]?.plan ?? "Starter" });
     if (fresh) await setSession(response, user.id);
     return response;
   } catch (error) { console.error("App GET:", error); return bad("Unable to load your workspace. Please try again.", 500); }
@@ -83,15 +82,7 @@ export async function POST(request: NextRequest) {
       await db.update(bots).set({ active: !bot.active }).where(eq(bots.id, bot.id));
       return NextResponse.json({ success: true, message: bot.active ? "Bot paused" : "Bot activated" });
     }
-    if (action === "copy") {
-      const key = String(body.traderKey ?? "");
-      if (!["olivia", "marcus", "sophia", "daniel"].includes(key)) return bad("Trader not found.");
-      const [existing] = await db.select().from(copiedTraders).where(and(eq(copiedTraders.userId, user.id), eq(copiedTraders.traderKey, key))).limit(1);
-      if (existing) { await db.delete(copiedTraders).where(eq(copiedTraders.id, existing.id)); return NextResponse.json({ success: true, message: "Stopped copying trader" }); }
-      if (!validAmount || amount < 10) return bad("Enter an allocation of at least $10.");
-      await db.insert(copiedTraders).values({ userId: user.id, traderKey: key, amount: amount.toFixed(2) });
-      return NextResponse.json({ success: true, message: "Trader added to your copy list" });
-    }
+    if (action === "copy") return bad("Copy trading now uses paid 7-day subscriptions. Go to Copy Trading to subscribe.");
     if (action === "plan") {
       const plan = String(body.plan ?? "");
       const prices: Record<string, number> = { Starter: 0, Pro: 29, Elite: 79 };
