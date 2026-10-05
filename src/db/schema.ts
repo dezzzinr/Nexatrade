@@ -45,14 +45,49 @@ export const transactions = pgTable("transactions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const bots = pgTable("bots", {
+// Admin-managed trading bot catalog. Admins curate the roster and set the
+// price users pay for a 7-day subscription; "active subscribers" is
+// computed from botSubscriptions rather than stored here.
+export const botProducts = pgTable("bot_products", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  strategy: text("strategy").notNull(), // DCA | Grid | Momentum | Scalping | Rebalancing | Yield
+  riskLevel: text("risk_level").notNull().default("Moderate"), // Low | Moderate | High
+  minAllocation: numeric("min_allocation", { precision: 18, scale: 2 }).notNull().default("10"),
+  subscriptionAmount: numeric("subscription_amount", { precision: 18, scale: 2 }).notNull(), // price for a 7-day subscription
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A user's paid subscription granting access to configure a bot product for
+// a fixed 7-day window. Each renewal is its own row so history is preserved
+// even as prices change. "Active" = expiresAt is in the future.
+export const botSubscriptions = pgTable("bot_subscriptions", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  botProductId: uuid("bot_product_id").notNull().references(() => botProducts.id),
+  amount: numeric("amount", { precision: 18, scale: 2 }).notNull(), // price paid, snapshot at subscribe time
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+// A user-configured running bot instance. Users may create multiple
+// instances of the same bot product (e.g. one per asset) while they hold an
+// active (non-expired) subscription to that product. Instances persist
+// across renewals; turning one back on after a lapsed subscription requires
+// resubscribing first.
+export const botInstances = pgTable("bot_instances", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  botProductId: uuid("bot_product_id").notNull().references(() => botProducts.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  strategy: text("strategy").notNull(),
+  symbol: text("symbol").notNull(),
   amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Admin-managed copy-trading profiles. Admins curate the roster and set the
@@ -86,11 +121,33 @@ export const copySubscriptions = pgTable("copy_subscriptions", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
-export const subscriptions = pgTable("subscriptions", {
+// Admin-managed subscription plans. Admins set the weekly price and a list
+// of feature bullet points shown to users; "active subscribers" is computed
+// from planSubscriptions rather than stored here.
+export const plans = pgTable("plans", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  priceWeekly: numeric("price_weekly", { precision: 18, scale: 2 }).notNull(),
+  features: text("features").array().notNull().default([]),
+  isFeatured: boolean("is_featured").notNull().default(false),
+  sortOrder: numeric("sort_order", { precision: 10, scale: 0 }).notNull().default("0"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A user's paid subscription to a plan for a fixed 7-day (weekly) window.
+// Each renewal/switch is its own row so history is preserved even as plan
+// prices change. "Current plan" = the most recent row where expiresAt is in
+// the future.
+export const planSubscriptions = pgTable("plan_subscriptions", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  plan: text("plan").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  planId: uuid("plan_id").notNull().references(() => plans.id),
+  amount: numeric("amount", { precision: 18, scale: 2 }).notNull(), // price paid, snapshot at subscribe time
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
 

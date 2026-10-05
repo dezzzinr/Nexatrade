@@ -3,8 +3,7 @@
 // fixed 7-day window and are charged the trader's current subscription
 // price from their paper-trading cash balance.
 
-export const SUBSCRIPTION_DAYS = 7;
-export const SUBSCRIPTION_MS = SUBSCRIPTION_DAYS * 24 * 60 * 60 * 1000;
+export { SUBSCRIPTION_DAYS, SUBSCRIPTION_MS } from "@/lib/subscriptions";
 
 export const AVATAR_COLORS = ["blue", "purple", "orange", "pink", "green", "red"] as const;
 export type AvatarColor = (typeof AVATAR_COLORS)[number];

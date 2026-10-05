@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, AlertTriangle, ArrowDownLeft, ArrowDownRight, ArrowLeftRight, ArrowRight, ArrowUpRight, Bell, Bot, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Copy, CreditCard, Eye, EyeOff, FileText, Hourglass, History, LayoutDashboard, LockKeyhole, LogOut, Menu, MoreHorizontal, Paperclip, Plus, RefreshCw, Search, Settings2, ShieldCheck, Signal, SlidersHorizontal, Sparkles, TrendingDown, TrendingUp, UploadCloud, UserRound, UsersRound, Wallet, WandSparkles, X, XCircle, Zap } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDownLeft, ArrowDownRight, ArrowLeftRight, ArrowRight, ArrowUpRight, Bell, Bot, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Copy, CreditCard, Eye, EyeOff, FileText, Hourglass, History, LayoutDashboard, LockKeyhole, LogOut, Menu, MoreHorizontal, Paperclip, Plus, RefreshCw, Search, Settings2, ShieldCheck, Signal, SlidersHorizontal, Sparkles, Trash2, TrendingDown, TrendingUp, UploadCloud, UserRound, UsersRound, Wallet, WandSparkles, X, XCircle, Zap } from "lucide-react";
 import { assets as catalogAssets, getAsset as getCatalogAsset, money, marketPrice, type Asset, type ChartPoint, type ChartPeriod, type MarketSnapshot } from "@/lib/market";
 import { DEPOSIT_METHODS, MAX_RECEIPT_BYTES, type DepositMethod } from "@/lib/deposits";
 import { WITHDRAWAL_METHODS, type WithdrawalMethod } from "@/lib/withdrawals";
@@ -11,14 +11,19 @@ type Page = "Overview" | "Portfolio" | "Trade" | "Trading Bot" | "Markets" | "Pl
 type DepositAccount = { id: string; method: string; label: string; instructions: string };
 type DepositRequest = { id: string; method: string; amount: string; destinationLabel: string | null; reference: string | null; note: string | null; status: string; adminNote: string | null; receiptFilename: string; createdAt: string; reviewedAt: string | null };
 type WithdrawalRequest = { id: string; method: string; methodLabel: string | null; amount: string; destination: string; note: string | null; status: string; adminNote: string | null; createdAt: string; reviewedAt: string | null };
-type AppData = { user: { id: string; name: string; email: string | null; isDemo: boolean; role: string; cashBalance: number }; holdings: { id: string; symbol: string; quantity: string; avgPrice: string }[]; trades: { id: string; symbol: string; side: string; quantity: string; price: string; total: string; createdAt: string }[]; transactions: { id: string; type: string; amount: string; description: string; createdAt: string }[]; bots: { id: string; name: string; strategy: string; amount: string; active: boolean; createdAt: string }[]; plan: string };
+type AppData = { user: { id: string; name: string; email: string | null; isDemo: boolean; role: string; cashBalance: number }; holdings: { id: string; symbol: string; quantity: string; avgPrice: string }[]; trades: { id: string; symbol: string; side: string; quantity: string; price: string; total: string; createdAt: string }[]; transactions: { id: string; type: string; amount: string; description: string; createdAt: string }[]; plan: string | null; planExpiresAt: string | null };
 type CopyTrader = { id: string; name: string; handle: string; avatarInitials: string; avatarColor: string; focus: string; riskLevel: string; returnPercent: string; winRate: string; subscriptionAmount: string; activeSubscribers: number; mySubscription: { expiresAt: string; amount: string } | null };
 type CopySubscription = { id: string; traderId: string; traderName: string; traderHandle: string; amount: string; startedAt: string; expiresAt: string };
+type TradingBot = { id: string; name: string; description: string; strategy: string; riskLevel: string; minAllocation: string; subscriptionAmount: string; activeSubscribers: number; mySubscription: { expiresAt: string; amount: string } | null };
+type BotSubscription = { id: string; botProductId: string; botName: string; amount: string; startedAt: string; expiresAt: string };
+type BotInstance = { id: string; botProductId: string; botName: string; strategy: string; name: string; symbol: string; amount: string; active: boolean; createdAt: string; subscriptionActive: boolean };
+type Plan = { id: string; name: string; description: string; priceWeekly: string; features: string[]; isFeatured: boolean; activeSubscribers: number; mySubscription: { expiresAt: string; amount: string; isCurrent: boolean } | null };
+type PlanSubscription = { id: string; planId: string; planName: string; amount: string; startedAt: string; expiresAt: string };
 const preview: AppData = {
   user: { id: "preview", name: "Alex Morgan", email: null, isDemo: true, role: "user", cashBalance: 12540.50 },
   holdings: [{ id: "a", symbol: "BTC", quantity: "0.28450000", avgPrice: "61240.00" }, { id: "b", symbol: "ETH", quantity: "3.25000000", avgPrice: "3180.00" }, { id: "c", symbol: "SOL", quantity: "42.00000000", avgPrice: "148.50" }, { id: "d", symbol: "AVAX", quantity: "80.00000000", avgPrice: "34.20" }],
   trades: [{ id: "t1", symbol: "BTC", side: "buy", quantity: "0.08450000", price: "66421.50", total: "5612.62", createdAt: new Date(Date.now() - 7200000).toISOString() }, { id: "t2", symbol: "ETH", side: "buy", quantity: "1.25000000", price: "3482.20", total: "4352.75", createdAt: new Date(Date.now() - 90000000).toISOString() }, { id: "t3", symbol: "SOL", side: "sell", quantity: "12.00000000", price: "168.40", total: "2020.80", createdAt: new Date(Date.now() - 259200000).toISOString() }],
-  transactions: [], bots: [], plan: "Starter"
+  transactions: [], plan: null, planExpiresAt: null
 };
 const navGroups: { label: string; items: { name: Page; icon: typeof LayoutDashboard }[] }[] = [
   { label: "WORKSPACE", items: [{ name: "Overview", icon: LayoutDashboard }, { name: "Portfolio", icon: Wallet }, { name: "Trade", icon: ArrowLeftRight }, { name: "Markets", icon: Activity }] },
@@ -92,6 +97,21 @@ export default function HomePage() {
   const [copyTradersLoaded, setCopyTradersLoaded] = useState(false);
   const [mySubscriptions, setMySubscriptions] = useState<CopySubscription[]>([]);
   const [subscribingId, setSubscribingId] = useState("");
+  const [tradingBots, setTradingBots] = useState<TradingBot[]>([]);
+  const [tradingBotsLoaded, setTradingBotsLoaded] = useState(false);
+  const [botSubHistory, setBotSubHistory] = useState<BotSubscription[]>([]);
+  const [botInstances, setBotInstances] = useState<BotInstance[]>([]);
+  const [botSubscribingId, setBotSubscribingId] = useState("");
+  const [configuringBotId, setConfiguringBotId] = useState<string | null>(null);
+  const [newInstanceSymbol, setNewInstanceSymbol] = useState("BTC");
+  const [newInstanceAmount, setNewInstanceAmount] = useState("");
+  const [newInstanceName, setNewInstanceName] = useState("");
+  const [instanceCreating, setInstanceCreating] = useState(false);
+  const [instanceBusyId, setInstanceBusyId] = useState("");
+  const [plansCatalog, setPlansCatalog] = useState<Plan[]>([]);
+  const [plansLoaded, setPlansLoaded] = useState(false);
+  const [planSubHistory, setPlanSubHistory] = useState<PlanSubscription[]>([]);
+  const [planSubscribingId, setPlanSubscribingId] = useState("");
   const [marketTab, setMarketTab] = useState("All assets");
   const [historyTab, setHistoryTab] = useState("All");
 
@@ -212,6 +232,76 @@ export default function HomePage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setSubscribingId(""); }
   };
   const daysLeft = (expiresAt: string) => Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000));
+  const loadTradingBots = async () => { try { const res = await fetch("/api/bots", { cache: "no-store" }); if (!res.ok) return; const result = await res.json(); if (Array.isArray(result.bots)) setTradingBots(result.bots); } catch { /* ignore */ } finally { setTradingBotsLoaded(true); } };
+  const loadBotSubHistory = async () => { try { const res = await fetch("/api/bot-subscriptions", { cache: "no-store" }); if (!res.ok) return; const result = await res.json(); if (Array.isArray(result.subscriptions)) setBotSubHistory(result.subscriptions); } catch { /* ignore */ } };
+  const loadBotInstances = async () => { try { const res = await fetch("/api/bot-instances", { cache: "no-store" }); if (!res.ok) return; const result = await res.json(); if (Array.isArray(result.instances)) setBotInstances(result.instances); } catch { /* ignore */ } };
+  useEffect(() => { if (ready && page === "Trading Bot") { void loadTradingBots(); void loadBotSubHistory(); void loadBotInstances(); } }, [ready, page]);
+  const subscribeToBot = async (bot: TradingBot) => {
+    if (botSubscribingId) return;
+    setBotSubscribingId(bot.id);
+    try {
+      const res = await fetch("/api/bot-subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ botProductId: bot.id }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      notify(result.message || `Subscribed to ${bot.name} for 7 days`);
+      await Promise.all([loadTradingBots(), loadBotSubHistory(), refresh()]);
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setBotSubscribingId(""); }
+  };
+  const openConfigureBot = (bot: TradingBot) => {
+    setConfiguringBotId(configuringBotId === bot.id ? null : bot.id);
+    setNewInstanceSymbol("BTC");
+    setNewInstanceAmount(bot.minAllocation);
+    setNewInstanceName("");
+  };
+  const createBotInstance = async (bot: TradingBot) => {
+    if (instanceCreating) return;
+    const amount = Number(newInstanceAmount);
+    if (!amount || amount < Number(bot.minAllocation)) return notify(`Enter an allocation of at least ${money(Number(bot.minAllocation))}.`, true);
+    setInstanceCreating(true);
+    try {
+      const res = await fetch("/api/bot-instances", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ botProductId: bot.id, symbol: newInstanceSymbol, amount, name: newInstanceName }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      notify(result.message || "Bot configured");
+      setConfiguringBotId(null);
+      setNewInstanceName("");
+      await loadBotInstances();
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setInstanceCreating(false); }
+  };
+  const toggleBotInstance = async (instance: BotInstance) => {
+    if (instanceBusyId) return;
+    setInstanceBusyId(instance.id);
+    try {
+      const res = await fetch(`/api/bot-instances/${instance.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: !instance.active }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      await loadBotInstances();
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setInstanceBusyId(""); }
+  };
+  const removeBotInstance = async (instance: BotInstance) => {
+    if (instanceBusyId || !window.confirm(`Remove ${instance.name}? This only deletes the configuration, not your bot subscription.`)) return;
+    setInstanceBusyId(instance.id);
+    try {
+      const res = await fetch(`/api/bot-instances/${instance.id}`, { method: "DELETE" });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      await loadBotInstances();
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setInstanceBusyId(""); }
+  };
+  const loadPlans = async () => { try { const res = await fetch("/api/plans", { cache: "no-store" }); if (!res.ok) return; const result = await res.json(); if (Array.isArray(result.plans)) setPlansCatalog(result.plans); } catch { /* ignore */ } finally { setPlansLoaded(true); } };
+  const loadPlanSubHistory = async () => { try { const res = await fetch("/api/plan-subscriptions", { cache: "no-store" }); if (!res.ok) return; const result = await res.json(); if (Array.isArray(result.subscriptions)) setPlanSubHistory(result.subscriptions); } catch { /* ignore */ } };
+  useEffect(() => { if (ready && page === "Plans") { void loadPlans(); void loadPlanSubHistory(); } }, [ready, page]);
+  const subscribeToPlan = async (plan: Plan) => {
+    if (planSubscribingId) return;
+    setPlanSubscribingId(plan.id);
+    try {
+      const res = await fetch("/api/plan-subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planId: plan.id }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      notify(result.message || `Subscribed to the ${plan.name} plan for 7 days`);
+      await Promise.all([loadPlans(), loadPlanSubHistory(), refresh()]);
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setPlanSubscribingId(""); }
+  };
   const submitWithdrawal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (withdrawalSubmitting) return;
@@ -258,7 +348,7 @@ export default function HomePage() {
   return <div className="app-shell">
     {mobileMenu && <div className="mobile-overlay" onClick={() => setMobileMenu(false)}/>}
     <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}><div className="brand" onClick={() => go("Overview")}><div className="brand-icon"><Activity size={23} strokeWidth={3}/></div><span>Nexa<span>Trade</span></span><button className="mobile-close" onClick={(e) => { e.stopPropagation(); setMobileMenu(false); }}><X size={19}/></button></div><div className="sidebar-body">{navGroups.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(item => { const Icon = item.icon; return <button key={item.name} className={`nav-item ${page === item.name ? "selected" : ""}`} onClick={() => go(item.name)}><Icon size={19} strokeWidth={page === item.name ? 2.25 : 1.8}/><span>{item.name}</span>{item.name === "Trading Signals" && <span className="nav-new">NEW</span>}</button>; })}</div>)}</div><div className="sidebar-bottom"><div className="help-card"><span className="help-bubble"><CircleHelp size={18}/></span><strong>Need a hand?</strong><p>Explore the platform with your free demo account.</p><button onClick={() => { go("Trading Signals"); }}>Explore signals <ArrowRight size={14}/></button></div><div className="sidebar-footer"><ShieldCheck size={15}/> Secure paper trading platform</div></div></aside>
-    <div className="main-shell"><header className="topbar"><div className="topbar-left"><button className="icon-btn menu-btn" onClick={() => setMobileMenu(true)} aria-label="Open menu"><Menu size={22}/></button><div className="breadcrumb">Workspace <ChevronRight size={15}/> <strong>{page}</strong></div></div><div className="topbar-right"><div className={`market-status ${market.status}`} title={market.updatedAt ? `CoinGecko quote updated ${new Date(market.updatedAt).toLocaleString()}` : "CoinGecko market data"} aria-live="polite"><i/><span className="market-status-label">{market.status === "live" ? `Live · ${asOf}` : market.status === "loading" ? "Loading markets" : market.status === "stale" ? "Stale quotes" : "Prices offline"}</span><button className="market-refresh" title="Refresh prices and chart" aria-label="Refresh prices and chart" onClick={() => { void refreshMarket(); setChartRefresh(n => n + 1); }}><RefreshCw size={13} className={marketRefreshing ? "spin" : ""}/></button></div><div className="top-search"><Search size={18}/><input placeholder="Search markets..." value={search} onChange={e => { setSearch(e.target.value); if (e.target.value) setPage("Markets"); }} onFocus={() => {}}/><span>⌘ K</span></div><span className="topbar-divider"/><div className="notification-wrap"><button className="icon-btn notif-btn" aria-label="Notifications" onClick={() => { setNotificationsOpen(!notificationsOpen); setProfileOpen(false); }}><Bell size={20}/><i/></button>{notificationsOpen && <div className="popover notification-popover"><div className="popover-title">Notifications <span>2 new</span></div><div className="notification-item"><span className="notification-icon"><TrendingUp size={16}/></span><div><strong>Market is moving</strong><p>{getAsset("BTC")!.price > 0 ? `Bitcoin is ${getAsset("BTC")!.change >= 0 ? "up" : "down"} ${Math.abs(getAsset("BTC")!.change).toFixed(2)}% in the last 24 hours.` : "Live Bitcoin quotes are loading."}</p><small>Just now</small></div></div><div className="notification-item"><span className="notification-icon purple"><Sparkles size={16}/></span><div><strong>Welcome to NexaTrade</strong><p>Explore markets and make your first paper trade.</p><small>Today</small></div></div></div>}</div><div className="profile-wrap"><button className="profile-button" onClick={() => { setProfileOpen(!profileOpen); setNotificationsOpen(false); }}><span className="avatar">{data.user.name.split(" ").map(n => n[0]).slice(0, 2).join("")}</span><span className="profile-meta"><strong>{data.user.name}</strong><small>{data.user.isDemo ? "Demo account" : data.plan + " member"}</small></span><ChevronDown size={16}/></button>{profileOpen && <div className="popover profile-popover"><div className="profile-pop-head"><strong>{data.user.name}</strong><span>{data.user.email ?? "Exploring in demo mode"}</span></div>{data.user.role === "admin" && <a href="/admin" className="admin-link-btn"><ShieldCheck size={17}/> Admin panel</a>}{data.user.isDemo ? <><button onClick={() => { setAuthMode("register"); setProfileOpen(false); }}><UserRound size={17}/> Create an account</button><button onClick={() => { setAuthMode("login"); setProfileOpen(false); }}><LockKeyhole size={17}/> Sign in</button></> : <button onClick={logout}><LogOut size={17}/> Log out</button>}</div>}</div></div></header>
+    <div className="main-shell"><header className="topbar"><div className="topbar-left"><button className="icon-btn menu-btn" onClick={() => setMobileMenu(true)} aria-label="Open menu"><Menu size={22}/></button><div className="breadcrumb">Workspace <ChevronRight size={15}/> <strong>{page}</strong></div></div><div className="topbar-right"><div className={`market-status ${market.status}`} title={market.updatedAt ? `CoinGecko quote updated ${new Date(market.updatedAt).toLocaleString()}` : "CoinGecko market data"} aria-live="polite"><i/><span className="market-status-label">{market.status === "live" ? `Live · ${asOf}` : market.status === "loading" ? "Loading markets" : market.status === "stale" ? "Stale quotes" : "Prices offline"}</span><button className="market-refresh" title="Refresh prices and chart" aria-label="Refresh prices and chart" onClick={() => { void refreshMarket(); setChartRefresh(n => n + 1); }}><RefreshCw size={13} className={marketRefreshing ? "spin" : ""}/></button></div><div className="top-search"><Search size={18}/><input placeholder="Search markets..." value={search} onChange={e => { setSearch(e.target.value); if (e.target.value) setPage("Markets"); }} onFocus={() => {}}/><span>⌘ K</span></div><span className="topbar-divider"/><div className="notification-wrap"><button className="icon-btn notif-btn" aria-label="Notifications" onClick={() => { setNotificationsOpen(!notificationsOpen); setProfileOpen(false); }}><Bell size={20}/><i/></button>{notificationsOpen && <div className="popover notification-popover"><div className="popover-title">Notifications <span>2 new</span></div><div className="notification-item"><span className="notification-icon"><TrendingUp size={16}/></span><div><strong>Market is moving</strong><p>{getAsset("BTC")!.price > 0 ? `Bitcoin is ${getAsset("BTC")!.change >= 0 ? "up" : "down"} ${Math.abs(getAsset("BTC")!.change).toFixed(2)}% in the last 24 hours.` : "Live Bitcoin quotes are loading."}</p><small>Just now</small></div></div><div className="notification-item"><span className="notification-icon purple"><Sparkles size={16}/></span><div><strong>Welcome to NexaTrade</strong><p>Explore markets and make your first paper trade.</p><small>Today</small></div></div></div>}</div><div className="profile-wrap"><button className="profile-button" onClick={() => { setProfileOpen(!profileOpen); setNotificationsOpen(false); }}><span className="avatar">{data.user.name.split(" ").map(n => n[0]).slice(0, 2).join("")}</span><span className="profile-meta"><strong>{data.user.name}</strong><small>{data.user.isDemo ? "Demo account" : (data.plan ? data.plan + " member" : "No active plan")}</small></span><ChevronDown size={16}/></button>{profileOpen && <div className="popover profile-popover"><div className="profile-pop-head"><strong>{data.user.name}</strong><span>{data.user.email ?? "Exploring in demo mode"}</span></div>{data.user.role === "admin" && <a href="/admin" className="admin-link-btn"><ShieldCheck size={17}/> Admin panel</a>}{data.user.isDemo ? <><button onClick={() => { setAuthMode("register"); setProfileOpen(false); }}><UserRound size={17}/> Create an account</button><button onClick={() => { setAuthMode("login"); setProfileOpen(false); }}><LockKeyhole size={17}/> Sign in</button></> : <button onClick={logout}><LogOut size={17}/> Log out</button>}</div>}</div></div></header>
     <main className="content">
       {(market.status === "stale" || market.status === "unavailable") && <div className="market-alert" role="status"><Clock3 size={17}/><span><strong>{market.status === "stale" ? "Market data is stale." : "Market prices are temporarily unavailable."}</strong> {market.status === "stale" ? `Showing last known CoinGecko quotes${asOf ? ` from ${asOf}` : ""}.` : "Check the connection or try again shortly."} Paper trading is paused until live prices return.</span><button onClick={() => void refreshMarket()}>Retry</button></div>}
       {page === "Overview" && <>
@@ -321,7 +411,48 @@ export default function HomePage() {
         <div className="market-highlights">{assets.slice(0, 3).map(a => <button className="highlight-card" key={a.symbol} onClick={() => { setSymbol(a.symbol); go("Trade"); }}><div className="highlight-top"><div className="coin-cell"><AssetIcon asset={a} size={37}/><div><strong>{a.name}</strong><span>{a.symbol}</span></div></div><ArrowUpRight size={17}/></div><div className="highlight-bottom"><div><strong>{marketPrice(a.price)}</strong>{a.price > 0 ? <span className={a.change >= 0 ? "positive-text" : "negative-text"}>{a.change >= 0 ? "+" : ""}{a.change.toFixed(2)}% today</span> : <span className="price-placeholder">Waiting for quotes</span>}</div><Sparkline values={a.chart} positive={a.change7d >= 0} width={112} height={44}/></div></button>)}</div>
         <section className="panel"><div className="section-head market-section-head"><div><h2>All cryptocurrencies</h2><p>{market.status === "live" ? `Live prices · updated ${asOf}` : market.status === "loading" ? "Loading prices from CoinGecko…" : "Last known prices · trading paused"}</p></div><div className="market-controls"><div className="market-search"><Search size={17}/><input placeholder="Search assets" value={search} onChange={e => setSearch(e.target.value)}/></div><div className="segmented">{["All assets", "Gainers", "Losers"].map(t => <button key={t} className={marketTab === t ? "active" : ""} onClick={() => setMarketTab(t)}>{t}</button>)}</div></div></div>{marketTable(filteredAssets, true)}<p className="market-data-note"><Activity size={13}/> Aggregated market data by CoinGecko. Prices are indicative; trades remain simulated.</p></section>
       </>}
-      {page === "Trading Bot" && <><PageTitle title="Trading bots" description="Set up automated strategies for your paper trading portfolio."><span className="demo-badge"><span/> Simulation mode</span></PageTitle><div className="feature-banner bot-banner"><div className="feature-icon"><Bot size={26}/></div><div><span className="banner-eyebrow">TRADE SMARTER, NOT HARDER</span><h2>Put your strategy on autopilot.</h2><p>Create a bot, choose your approach, and explore automated trading without risking real funds.</p></div><div className="banner-art"><Bot size={100} strokeWidth={1}/></div></div><div className="two-col bot-layout"><section className="panel"><SectionHead title="Create a bot" subtitle="Configure your new trading strategy"/><form className="stacked-form" onSubmit={async e=>{e.preventDefault(); const ok=await action({action:"createBot",strategy:botStrategy,symbol:botSymbol,amount:Number(botAmount)}); if(ok) setBotAmount("500");}}><label className="input-label">Trading strategy</label><div className="strategy-options">{[{name:"DCA",desc:"Buy at regular intervals",icon:CalendarDays},{name:"Grid",desc:"Trade within a price range",icon:Settings2},{name:"Momentum",desc:"Follow market trends",icon:TrendingUp}].map(s=>{const I=s.icon;return <button type="button" key={s.name} className={botStrategy===s.name ? "strategy-option chosen":"strategy-option"} onClick={()=>setBotStrategy(s.name)}><I size={19}/><span><strong>{s.name}</strong><small>{s.desc}</small></span><span className="radio-dot"/></button>;})}</div><label className="input-label">Asset to trade</label><div className="select-wrap"><AssetIcon asset={getAsset(botSymbol)!} size={26}/><select value={botSymbol} onChange={e=>setBotSymbol(e.target.value)}>{assets.map(a=><option key={a.symbol} value={a.symbol}>{a.name} ({a.symbol})</option>)}</select><ChevronDown size={16}/></div><label className="input-label">Allocation limit (USD)</label><div className="amount-input"><span>$</span><input type="number" min="10" step="0.01" value={botAmount} onChange={e=>setBotAmount(e.target.value)} required/><span>USD</span></div><button disabled={loading || !ready} className="primary-btn full-btn">{loading ? "Creating..." : "Create bot"}<Plus size={17}/></button><p className="simulation-note"><ShieldCheck size={13}/> Bots are configurations only and do not execute live trades.</p></form></section><section className="panel"><SectionHead title="My bots" subtitle={`${data.bots.length} bot${data.bots.length!==1?"s":""} configured`}/>{data.bots.length ? <div className="bot-list">{data.bots.map(bot=><div className="bot-item" key={bot.id}><div className="bot-item-top"><span className="bot-item-icon"><Bot size={22}/></span><span className={`bot-status ${bot.active ? "running":"paused"}`}><span/>{bot.active ? "Active":"Paused"}</span></div><h3>{bot.name}</h3><p>{bot.strategy} strategy · Allocation limit {money(Number(bot.amount))}</p><div className="bot-item-bottom"><span>Created {new Date(bot.createdAt).toLocaleDateString()}</span><button className="outline-btn small" disabled={loading} onClick={()=>action({action:"toggleBot",id:bot.id})}>{bot.active ? "Pause bot":"Resume bot"}</button></div></div>)}</div> : <EmptyState icon={Bot} title="No bots running yet" text="Create your first bot to start exploring automated trading strategies."/>}</section></div></>}
+      {page === "Trading Bot" && <>
+        <PageTitle title="Trading bots" description="Subscribe to an admin-managed bot strategy for 7 days, then configure it to trade."><span className="demo-badge"><span/> Simulation mode</span></PageTitle>
+        <div className="feature-banner bot-banner"><div className="feature-icon"><Bot size={26}/></div><div><span className="banner-eyebrow">TRADE SMARTER, NOT HARDER</span><h2>Put your strategy on autopilot.</h2><p>Browse admin-curated bot strategies, subscribe for 7 days, then configure any number of instances to trade with.</p></div><div className="banner-art"><Bot size={100} strokeWidth={1}/></div></div>
+        <div className="section-title-row"><div><h2>Available bots</h2><p>Each subscription runs for exactly 7 days from the moment you subscribe</p></div><span className="subtle-label">{tradingBots.filter(b=>b.mySubscription).length} active</span></div>
+        {!tradingBotsLoaded ? <div className="no-results">Loading bots...</div> : tradingBots.length === 0 ? <EmptyState icon={Bot} title="No bots available yet" text="Check back soon — an admin hasn't added any trading bots yet."/> : <div className="trader-grid">{tradingBots.map(b=>{
+          const subscribed = !!b.mySubscription;
+          const left = b.mySubscription ? daysLeft(b.mySubscription.expiresAt) : 0;
+          const price = Number(b.subscriptionAmount);
+          return <div className="panel trader-card" key={b.id}>
+            <div className="trader-head"><span className="trader-avatar blue"><Bot size={20}/></span><span className="verified"><CheckCircle2 size={16}/> Admin verified</span></div>
+            <h3>{b.name}</h3><p>{b.strategy} strategy</p>
+            <p className="bot-desc">{b.description}</p>
+            <div className="trader-stats"><div><span>Risk</span><strong>{b.riskLevel}</strong></div><div><span>Min allocation</span><strong>{money(Number(b.minAllocation))}</strong></div><div><span>Active subscribers</span><strong>{b.activeSubscribers}</strong></div></div>
+            <div className="trader-return" style={{marginTop:4}}><strong>{price > 0 ? money(price) : "Free"}</strong><span>/ 7 days</span></div>
+            {subscribed ? <button className="outline-btn full-btn" onClick={()=>openConfigureBot(b)}><Settings2 size={17}/> Subscribed · {left}d left · {configuringBotId===b.id ? "Close" : "Configure"}</button>
+              : <button className="primary-btn full-btn" disabled={loading || !ready || botSubscribingId === b.id} onClick={()=>subscribeToBot(b)}>{botSubscribingId === b.id ? "Subscribing..." : <><Copy size={17}/> Subscribe · {price > 0 ? money(price) : "Free"}</>}</button>}
+            {subscribed && configuringBotId===b.id && <div className="bot-configure-form">
+              <label className="input-label">Asset to trade</label>
+              <div className="select-wrap"><AssetIcon asset={getAsset(newInstanceSymbol)!} size={24}/><select value={newInstanceSymbol} onChange={e=>setNewInstanceSymbol(e.target.value)}>{assets.map(a=><option key={a.symbol} value={a.symbol}>{a.name} ({a.symbol})</option>)}</select><ChevronDown size={16}/></div>
+              <label className="input-label">Allocation (min {money(Number(b.minAllocation))})</label>
+              <div className="amount-input"><span>$</span><input type="number" min={b.minAllocation} step="0.01" value={newInstanceAmount} onChange={e=>setNewInstanceAmount(e.target.value)}/><span>USD</span></div>
+              <label className="input-label">Name (optional)</label>
+              <input className="text-input" placeholder={`${b.name} · ${newInstanceSymbol}`} value={newInstanceName} onChange={e=>setNewInstanceName(e.target.value)} maxLength={80}/>
+              <button className="primary-btn full-btn" disabled={instanceCreating} onClick={()=>createBotInstance(b)}>{instanceCreating ? "Adding..." : <>Add bot instance <Plus size={16}/></>}</button>
+            </div>}
+          </div>;
+        })}</div>}
+        <div className="copy-note"><ShieldCheck size={19}/><span>Bots are configurations only and do not execute live trades. Subscribing charges your demo cash balance for 7 days of access; resubscribe once it lapses to keep running your bots.</span></div>
+        <div className="section-title-row"><div><h2>My bots</h2><p>Configured instances across your subscribed bots</p></div></div>
+        {botInstances.length === 0 ? <EmptyState icon={Bot} title="No bots configured yet" text="Subscribe to a bot above, then configure an instance to see it here."/> : <div className="panel bot-list">{botInstances.map(bot=><div className="bot-item" key={bot.id}>
+          <div className="bot-item-top"><span className="bot-item-icon"><Bot size={22}/></span><span className={`bot-status ${bot.active && bot.subscriptionActive ? "running":"paused"}`}><span/>{bot.active && bot.subscriptionActive ? "Active" : bot.active && !bot.subscriptionActive ? "Needs resubscribe" : "Paused"}</span></div>
+          <h3>{bot.name}</h3><p>{bot.botName} · {bot.strategy} strategy · {bot.symbol} · Allocation {money(Number(bot.amount))}</p>
+          {!bot.subscriptionActive && <p className="admin-request-note admin-note-flag"><AlertTriangle size={13}/> Subscription expired — resubscribe above to resume this bot.</p>}
+          <div className="bot-item-bottom"><span>Created {new Date(bot.createdAt).toLocaleDateString()}</span><div style={{display:"flex",gap:8}}><button className="outline-btn small" disabled={instanceBusyId === bot.id || (!bot.active && !bot.subscriptionActive)} onClick={()=>toggleBotInstance(bot)}>{bot.active ? "Pause":"Resume"}</button><button className="outline-btn small danger-outline" disabled={instanceBusyId === bot.id} onClick={()=>removeBotInstance(bot)}><Trash2 size={13}/></button></div></div>
+        </div>)}</div>}
+        <div className="section-title-row"><div><h2>My bot subscriptions</h2><p>Your trading bot subscription history</p></div></div>
+        {botSubHistory.length === 0 ? <EmptyState icon={History} title="No subscriptions yet" text="Subscribe to a bot above to see your history here."/> : <div className="table-scroll"><table className="data-table"><thead><tr><th>Bot</th><th>Amount</th><th>Started</th><th>Expires</th><th>Status</th></tr></thead><tbody>{botSubHistory.map(s=>{
+          const left = daysLeft(s.expiresAt);
+          const active = new Date(s.expiresAt).getTime() > Date.now();
+          return <tr key={s.id}><td><div className="coin-cell"><div><strong>{s.botName}</strong></div></div></td><td className="table-strong">{money(Number(s.amount))}</td><td className="muted-cell">{new Date(s.startedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</td><td className="muted-cell">{new Date(s.expiresAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</td><td>{active ? <span className="status-pill"><span/>Active · {left}d left</span> : <span className="status-pill expired"><span/>Expired</span>}</td></tr>;
+        })}</tbody></table></div>}
+      </>}
       {page === "Copy Trading" && <>
         <PageTitle title="Copy trading" description="Subscribe to a trader's strategy for 7 days and track your subscription history."/>
         <div className="feature-banner copy-banner"><div className="feature-icon"><UsersRound size={25}/></div><div><span className="banner-eyebrow">LEARN FROM THE BEST</span><h2>Great minds trade alike.</h2><p>Browse admin-curated traders and subscribe to follow their strategy for a 7-day period.</p></div><div className="banner-art"><UsersRound size={105} strokeWidth={1}/></div></div>
@@ -365,7 +496,31 @@ export default function HomePage() {
         })}</div> : <div className="panel"><EmptyState icon={Signal} title="Market observations unavailable" text="Live market prices have not loaded yet. Try refreshing in a moment."/></div>}
         <p className="disclaimer">CoinGecko provides market data, not trading advice. All trades and account balances on NexaTrade are simulated.</p>
       </>}
-      {page === "Plans" && <><PageTitle title="Choose your plan" description="Find the right tools for every stage of your trading journey."/><div className="plans-intro"><span><Sparkles size={19}/></span> Your current plan is <strong>{data.plan}</strong>. Plan charges are simulated and deducted from your demo balance.</div><div className="plans-grid">{[{name:"Starter",price:0,desc:"The essentials to get started trading with confidence.",features:["Paper trading dashboard","Market overview","Portfolio tracking","Basic trade history"]},{name:"Pro",price:29,desc:"Powerful tools for traders ready to take the next step.",features:["Everything in Starter","Trading bot configurations","Copy trading watchlist","Advanced market signals","Priority insights"]},{name:"Elite",price:79,desc:"The complete experience for serious market explorers.",features:["Everything in Pro","Unlimited bot configurations","All trading signals","Advanced portfolio analytics","VIP experience"]}].map(p=><div className={`plan-card panel ${p.name==="Pro" ? "featured":""}`} key={p.name}>{p.name==="Pro" && <span className="popular-label"><Zap size={13}/> MOST POPULAR</span>}<span className="plan-icon">{p.name==="Starter"?<Wallet size={24}/>:p.name==="Pro"?<Zap size={24}/>:<WandSparkles size={24}/>}</span><h2>{p.name}</h2><p>{p.desc}</p><div className="plan-price"><strong>${p.price}</strong><span>/ month</span></div><button className={data.plan===p.name ? "outline-btn full-btn":"primary-btn full-btn"} disabled={data.plan===p.name || loading || !ready} onClick={()=>action({action:"plan",plan:p.name})}>{data.plan===p.name ? <><Check size={17}/> Current plan</>:<>Choose {p.name} <ArrowRight size={17}/></>}</button><div className="plan-features"><span>WHAT&apos;S INCLUDED</span>{p.features.map(f=><div key={f}><Check size={16}/>{f}</div>)}</div></div>)}</div><p className="disclaimer">This is a simulation. No real billing occurs and plans do not enable live exchange connectivity.</p></>}
+      {page === "Plans" && <>
+        <PageTitle title="Choose your plan" description="Subscribe weekly to unlock more of the platform. No auto-renewal — resubscribe (or switch) once your week is up."/>
+        <div className="plans-intro"><span><Sparkles size={19}/></span> Your current plan is <strong>{data.plan ?? "No active plan"}</strong>{data.planExpiresAt && <> · renews by {new Date(data.planExpiresAt).toLocaleDateString()}</>}. Plan charges are simulated and deducted from your demo balance.</div>
+        {!plansLoaded ? <div className="no-results">Loading plans...</div> : plansCatalog.length === 0 ? <EmptyState icon={Sparkles} title="No plans available yet" text="Check back soon — an admin hasn't added any plans yet."/> : <div className="plans-grid">{plansCatalog.map(p=>{
+          const isCurrent = !!p.mySubscription?.isCurrent;
+          const left = p.mySubscription ? daysLeft(p.mySubscription.expiresAt) : 0;
+          const price = Number(p.priceWeekly);
+          return <div className={`plan-card panel ${p.isFeatured ? "featured":""}`} key={p.id}>
+            {p.isFeatured && <span className="popular-label"><Zap size={13}/> MOST POPULAR</span>}
+            <span className="plan-icon">{price === 0 ?<Wallet size={24}/>:p.isFeatured?<Zap size={24}/>:<WandSparkles size={24}/>}</span>
+            <h2>{p.name}</h2><p>{p.description}</p>
+            <div className="plan-price"><strong>{price > 0 ? money(price) : "Free"}</strong><span>/ week</span></div>
+            <button className={isCurrent ? "outline-btn full-btn":"primary-btn full-btn"} disabled={isCurrent || loading || !ready || planSubscribingId === p.id} onClick={()=>subscribeToPlan(p)}>{isCurrent ? <><Check size={17}/> Current plan · {left}d left</>:planSubscribingId===p.id?"Subscribing...":<>Choose {p.name} <ArrowRight size={17}/></>}</button>
+            <div className="plan-features"><span>WHAT&apos;S INCLUDED</span>{p.features.map(f=><div key={f}><Check size={16}/>{f}</div>)}</div>
+            <p className="subtle-label" style={{marginTop:10}}>{p.activeSubscribers} active subscriber{p.activeSubscribers===1?"":"s"}</p>
+          </div>;
+        })}</div>}
+        <p className="disclaimer">This is a simulation. No real billing occurs and plans do not enable live exchange connectivity.</p>
+        <div className="section-title-row"><div><h2>My plan subscriptions</h2><p>Your plan subscription history</p></div></div>
+        {planSubHistory.length === 0 ? <EmptyState icon={History} title="No subscriptions yet" text="Choose a plan above to see your history here."/> : <div className="table-scroll"><table className="data-table"><thead><tr><th>Plan</th><th>Amount</th><th>Started</th><th>Expires</th><th>Status</th></tr></thead><tbody>{planSubHistory.map(s=>{
+          const left = daysLeft(s.expiresAt);
+          const active = new Date(s.expiresAt).getTime() > Date.now();
+          return <tr key={s.id}><td><div className="coin-cell"><div><strong>{s.planName}</strong></div></div></td><td className="table-strong">{money(Number(s.amount))}</td><td className="muted-cell">{new Date(s.startedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</td><td className="muted-cell">{new Date(s.expiresAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</td><td>{active ? <span className="status-pill"><span/>Active · {left}d left</span> : <span className="status-pill expired"><span/>Expired</span>}</td></tr>;
+        })}</tbody></table></div>}
+      </>}
       {page === "Deposit" && <>
         <PageTitle title="Add funds" description="Send a payment from outside NexaTrade using one of the methods below, then submit your receipt for admin review."/>
         <div className="deposit-note-banner"><Hourglass size={17}/><span>Deposits are <strong>not instant</strong>. Send funds to the destination shown, upload proof of payment, and an admin will verify and credit your balance — usually within a few hours.</span></div>

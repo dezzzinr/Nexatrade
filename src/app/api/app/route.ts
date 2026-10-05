@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { users, holdings, trades, transactions, bots, subscriptions } from "@/db/schema";
-import { desc, eq, and, sql } from "drizzle-orm";
+import { users, holdings, trades, transactions, planSubscriptions, plans } from "@/db/schema";
+import { desc, eq, and, sql, gt } from "drizzle-orm";
 import { getUser, createDemoUser, setSession } from "@/lib/auth";
 import { getAsset, marketPrice } from "@/lib/market";
 import { getMarketSnapshot } from "@/lib/market-server";
@@ -14,14 +14,18 @@ export async function GET(request: NextRequest) {
     let user = await getUser(request);
     let fresh = false;
     if (!user) { user = await createDemoUser(); fresh = true; }
-    const [h, t, tx, b, p] = await Promise.all([
+    const [h, t, tx, currentPlan] = await Promise.all([
       db.select().from(holdings).where(eq(holdings.userId, user.id)),
       db.select().from(trades).where(eq(trades.userId, user.id)).orderBy(desc(trades.createdAt)).limit(50),
       db.select().from(transactions).where(eq(transactions.userId, user.id)).orderBy(desc(transactions.createdAt)).limit(50),
-      db.select().from(bots).where(eq(bots.userId, user.id)).orderBy(desc(bots.createdAt)),
-      db.select().from(subscriptions).where(eq(subscriptions.userId, user.id)).orderBy(desc(subscriptions.createdAt)).limit(1),
+      db.select({ planName: plans.name, expiresAt: planSubscriptions.expiresAt })
+        .from(planSubscriptions)
+        .innerJoin(plans, eq(planSubscriptions.planId, plans.id))
+        .where(and(eq(planSubscriptions.userId, user.id), gt(planSubscriptions.expiresAt, new Date())))
+        .orderBy(desc(planSubscriptions.startedAt))
+        .limit(1),
     ]);
-    const response = NextResponse.json({ user: { id: user.id, name: user.name, email: user.email, isDemo: user.isDemo, role: user.role, cashBalance: Number(user.cashBalance) }, holdings: h, trades: t, transactions: tx, bots: b, plan: p[0]?.plan ?? "Starter" });
+    const response = NextResponse.json({ user: { id: user.id, name: user.name, email: user.email, isDemo: user.isDemo, role: user.role, cashBalance: Number(user.cashBalance) }, holdings: h, trades: t, transactions: tx, plan: currentPlan[0]?.planName ?? null, planExpiresAt: currentPlan[0]?.expiresAt ?? null });
     if (fresh) await setSession(response, user.id);
     return response;
   } catch (error) { console.error("App GET:", error); return bad("Unable to load your workspace. Please try again.", 500); }
@@ -33,8 +37,6 @@ export async function POST(request: NextRequest) {
     if (!user) return bad("Session expired. Please refresh the page.", 401);
     const body = await request.json();
     const action = String(body.action ?? "");
-    const amount = Number(body.amount);
-    const validAmount = Number.isFinite(amount) && amount > 0 && amount <= 10000000 && Math.abs(Math.round(amount * 100) - amount * 100) < 0.000001;
 
     if (action === "trade") {
       const symbol = String(body.symbol ?? "").toUpperCase();
@@ -71,35 +73,9 @@ export async function POST(request: NextRequest) {
     }
     if (action === "withdrawal") return bad("Withdrawals now require admin review. Go to Withdraw to get started.");
     if (action === "deposit") return bad("Deposits now require submitting a payment receipt for admin review. Go to Deposit to get started.");
-    if (action === "createBot") {
-      if (!validAmount || amount < 10 || !["DCA", "Grid", "Momentum"].includes(body.strategy)) return bad("Choose a strategy and an allocation of at least $10.");
-      await db.insert(bots).values({ userId: user.id, name: `${body.strategy} ${body.symbol && getAsset(body.symbol) ? body.symbol : "BTC"} Bot`, strategy: body.strategy, amount: amount.toFixed(2), active: true });
-      return NextResponse.json({ success: true, message: "Trading bot created. This is a paper-trading simulation." });
-    }
-    if (action === "toggleBot") {
-      const [bot] = await db.select().from(bots).where(and(eq(bots.id, String(body.id)), eq(bots.userId, user.id))).limit(1);
-      if (!bot) return bad("Bot not found.", 404);
-      await db.update(bots).set({ active: !bot.active }).where(eq(bots.id, bot.id));
-      return NextResponse.json({ success: true, message: bot.active ? "Bot paused" : "Bot activated" });
-    }
+    if (action === "createBot" || action === "toggleBot") return bad("Trading bots now require a paid 7-day subscription. Go to Trading Bot to subscribe and configure one.");
     if (action === "copy") return bad("Copy trading now uses paid 7-day subscriptions. Go to Copy Trading to subscribe.");
-    if (action === "plan") {
-      const plan = String(body.plan ?? "");
-      const prices: Record<string, number> = { Starter: 0, Pro: 29, Elite: 79 };
-      if (!(plan in prices)) return bad("Invalid plan.");
-      const [current] = await db.select().from(subscriptions).where(eq(subscriptions.userId, user.id)).orderBy(desc(subscriptions.createdAt)).limit(1);
-      if ((current?.plan ?? "Starter") === plan) return bad("You are already on this plan.");
-      await db.transaction(async (tx) => {
-        if (prices[plan] > 0) {
-          const [wallet] = await tx.select().from(users).where(eq(users.id, user.id)).for("update");
-          if (Number(wallet.cashBalance) < prices[plan]) throw new Error("Insufficient available balance.");
-          await tx.update(users).set({ cashBalance: sql`${users.cashBalance} - ${prices[plan]}` }).where(eq(users.id, user.id));
-          await tx.insert(transactions).values({ userId: user.id, type: "plan", amount: prices[plan].toFixed(2), description: `${plan} plan subscription (simulation)` });
-        }
-        await tx.insert(subscriptions).values({ userId: user.id, plan });
-      });
-      return NextResponse.json({ success: true, message: `You're now on the ${plan} plan` });
-    }
+    if (action === "plan") return bad("Plans now use paid weekly subscriptions. Go to Plans to subscribe.");
     return bad("Unknown action.");
   } catch (error) { console.error("App POST:", error); return bad(error instanceof Error ? error.message : "Something went wrong.", 400); }
 }

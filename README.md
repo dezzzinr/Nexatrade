@@ -10,15 +10,16 @@ Create a Neon PostgreSQL database and set `DATABASE_URL` in `.env` to the connec
 DATABASE_URL="postgresql://USER:PASSWORD@HOST.neon.tech/DBNAME?sslmode=require"
 ```
 
-Then install dependencies, apply the schema, and start the app:
+Then install dependencies, apply the schema, seed the starter catalog, and start the app:
 
 ```bash
 npm install
 npx drizzle-kit push
+npm run seed
 npm run dev
 ```
 
-The app and Drizzle both read the same `DATABASE_URL`; no credentials are embedded in the source.
+The app and Drizzle both read the same `DATABASE_URL`; no credentials are embedded in the source. `npm run seed` (`scripts/seed.mjs`) is idempotent — safe to re-run — and inserts the 10 starter trading bots and 4 starter plans described below only if they don't already exist, so admins are free to edit/delete/add to the catalog afterwards without the seed re-adding anything.
 
 ## Deploy to Vercel + Neon
 
@@ -28,9 +29,10 @@ The app and Drizzle both read the same `DATABASE_URL`; no credentials are embedd
    ```bash
    npm install
    npx drizzle-kit push
+   npm run seed
    ```
 
-   `drizzle-kit push` uses the `DATABASE_URL` in your local `.env`. Double-check that it points to the intended Neon database. This is suitable for the first deployment; for subsequent production schema changes, review changes and use versioned migrations rather than blindly pushing to a live database.
+   `drizzle-kit push` uses the `DATABASE_URL` in your local `.env`. Double-check that it points to the intended Neon database. This is suitable for the first deployment; for subsequent production schema changes, review changes and use versioned migrations rather than blindly pushing to a live database. `npm run seed` populates the starter trading bot and plan catalogs (see below) — it's idempotent, so it's safe to run again later if you ever want to top it back up.
 3. **Push this project to GitHub.** Create an empty GitHub repository, then run the commands below in the project directory if it is not already a Git repository:
 
    ```bash
@@ -62,10 +64,13 @@ The current market snapshot is available at `/api/market`; chart data at `/api/m
 - Live market data, coin images, interactive historical charts, and paper-trading dashboard
 - Portfolio valuation, server-verified simulated buy/sell execution, and trade history
 - Manual, admin-reviewed deposits and withdrawals with a transaction ledger (see below)
-- Trading bot strategy configurations, admin-managed copy traders with paid 7-day subscriptions, market observations, and plan subscriptions
+- Admin-managed trading bot catalog with paid 7-day subscriptions and user-configured bot instances
+- Admin-managed copy traders with paid 7-day subscriptions
+- Admin-managed subscription plans with paid 7-day (weekly) subscriptions and per-plan feature lists
+- Market observations, and a seed script (`npm run seed`) that populates 10 starter bots and 4 starter plans
 - Responsive interface using the NexaTrade blue theme
 
-**Simulation notice:** Market prices are real provider quotes, but there is no live exchange execution, autonomous bot execution, or automatic trade copying — subscribing to a copy trader grants access to their published stats for 7 days, it does not mirror real trades. Deposits and withdrawals model a real-world manual payment flow — see below.
+**Simulation notice:** Market prices are real provider quotes, but there is no live exchange execution, autonomous bot execution, or automatic trade copying — subscribing to a trading bot or copy trader grants access to configure it / view their published stats for 7 days, it does not execute real trades or mirror real trades. Plan subscriptions are a simulated billing flow and do not enable any live exchange connectivity. Deposits and withdrawals model a real-world manual payment flow — see below.
 
 ## Deposits: manual, admin-reviewed (no payment processor)
 
@@ -99,6 +104,30 @@ Copy trading is fully admin-curated — there is no seeded or hardcoded trader r
 3. Clicking **Subscribe** charges the trader's current price from the user's paper-trading cash balance (free/$0 traders can be subscribed to with no charge) and logs a `subscription` transaction. The subscription starts immediately and **expires in exactly 7 days** — there is no auto-renewal; users resubscribe once it lapses.
 4. A user can only hold one active subscription per trader at a time; re-subscribing before expiry is blocked with a friendly message showing when it unlocks again. Past and current subscriptions are listed in a "My subscriptions" history panel with countdowns.
 5. Admins can edit a trader's profile/stats/price at any time (price changes only affect future subscriptions — past subscriptions keep the price that was charged at the time), toggle them active/hidden, or delete them. Deleting is blocked with a clear message if the trader has subscription history; deactivate instead to retire them while preserving records.
+
+## Trading bots: admin-managed catalog, 7-day paid subscriptions, user-configured instances
+
+Like copy trading, the bot catalog is fully admin-curated — `npm run seed` only provides a starting lineup; admins can add, edit, deactivate, or remove bots at any time from **Admin panel → Trading bots** (`/admin`):
+
+1. An admin adds a bot under **Admin panel → Trading bots**, setting its name, description, strategy (DCA, Grid, Momentum, Scalping, Rebalancing, or Yield), risk level (Low/Moderate/High), minimum allocation, and — required — the **subscription price** charged for a 7-day subscription.
+2. Users browse the catalog on the **Trading Bot** page, which shows each bot's strategy/risk/minimum allocation, price, and a live **active subscribers** count. Clicking **Subscribe** charges the bot's current price from the user's paper-trading cash balance and starts a 7-day, non-renewing subscription (same pattern as copy trading) — users resubscribe once it lapses to keep configuring/running that bot.
+3. Once subscribed, a user can **configure any number of bot instances** for that bot product — e.g. one instance trading BTC and a separate instance trading ETH, each with its own allocation amount and optional name — for as long as the subscription stays active. Instances can be paused/resumed or deleted independently under "My bots"; pausing/deleting does not refund or cancel the underlying subscription.
+4. If a bot subscription expires, its existing instances are flagged "Needs resubscribe" and can't be reactivated until the user subscribes again; they are not auto-deleted, so resubscribing picks up existing configurations.
+5. Admins can edit a bot's profile/price at any time (price changes only affect future subscriptions), toggle active/hidden, or delete it. Deleting is blocked with a clear message if the bot has subscription history; deactivate instead to retire it while preserving records.
+
+**Seeded starter catalog (10 bots):** Stablecoin Yield Bot ($5/wk, Yield, Low risk), BTC DCA Starter ($9/wk, DCA, Low), Conservative DCA Plus ($12/wk, DCA, Low), ETH Grid Trader ($15/wk, Grid, Moderate), Multi-Asset Rebalancer ($19/wk, Rebalancing, Moderate), Swing Trader AI ($22/wk, Momentum, Moderate), Momentum Surge ($25/wk, Momentum, High), Altcoin Momentum Hunter ($29/wk, Momentum, High), BTC Grid Pro ($35/wk, Grid, Moderate), Scalper Bot ($39/wk, Scalping, High).
+
+## Plans: admin-managed tiers, 7-day (weekly) paid subscriptions
+
+Subscription plans follow the same admin-curated pattern — `npm run seed` provides 4 starter tiers, but admins fully control pricing and feature lists from **Admin panel → Plans** (`/admin`):
+
+1. An admin adds a plan under **Admin panel → Plans**, setting its name, description, weekly price, a feature list (one feature per line), an optional "Most popular" featured flag, and a sort order controlling display order.
+2. Users browse tiers on the **Plans** page and click **Choose** to subscribe weekly; the price is charged from the user's cash balance and the subscription runs for exactly 7 days, same non-renewing pattern as bots/copy trading. Users may switch plans at any time; re-choosing the plan that is already their current active one is blocked until it lapses.
+3. The "current plan" shown throughout the app (topbar, Plans page) is whichever plan has the most recently started still-active subscription; a user with no active plan subscription is shown "No active plan" rather than a hardcoded default tier.
+4. A "My plan subscriptions" history table shows past and current plan subscriptions with their price, start date, and expiry.
+5. Admins can edit a plan's price/description/features/feature order/featured flag at any time (price changes only affect future subscriptions), toggle active/hidden, or delete it. Deleting is blocked with a clear message if the plan has subscription history; deactivate instead to retire it while preserving records.
+
+**Seeded starter catalog (4 plans):** Starter ($0/wk — Paper trading dashboard, Market overview, Portfolio tracking, Basic trade history), Pro ($15/wk, featured — adds Trading bot subscriptions, Copy trading subscriptions, Advanced market signals, Priority insights), Elite ($35/wk — adds Unlimited bot instances, All trading signals, Advanced portfolio analytics, VIP experience), Institutional ($75/wk — adds Dedicated account concierge, Early access to new bots & traders, Custom portfolio reporting, Priority support response).
 
 ### Creating your first admin
 
