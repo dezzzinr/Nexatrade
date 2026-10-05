@@ -61,8 +61,29 @@ The current market snapshot is available at `/api/market`; chart data at `/api/m
 - Registration and login with salted password hashes and HTTP-only database-backed sessions
 - Live market data, coin images, interactive historical charts, and paper-trading dashboard
 - Portfolio valuation, server-verified simulated buy/sell execution, and trade history
-- Simulated deposits and withdrawals with a transaction ledger
+- Manual, admin-reviewed deposits (see below) and simulated withdrawals with a transaction ledger
 - Trading bot strategy configurations, copy-trader watchlists, market observations, and plan subscriptions
 - Responsive interface using the NexaTrade blue theme
 
-**Simulation notice:** Market prices are real provider quotes, but there is no live exchange execution, real funds, payment processing, autonomous bot execution, or automatic trade copying. Demo deposits instantly credit simulated USD only.
+**Simulation notice:** Market prices are real provider quotes, but there is no live exchange execution, autonomous bot execution, or automatic trade copying. Withdrawals remain fully simulated. Deposits, however, model a real-world manual payment flow — see below.
+
+## Deposits: manual, admin-reviewed (no payment processor)
+
+Deposits are **not instant and not automatic**. The flow is designed for a business that collects payments outside the app (crypto wallets, bank transfers, PayPal, Cash App, gift cards) and credits balances manually after verifying proof of payment:
+
+1. An admin configures one or more **destination accounts** per method (e.g. a BTC address, a bank account, a PayPal email, a $Cashtag, gift-card instructions) under **Admin panel → Deposit destinations** (`/admin`).
+2. A user opens **Deposit**, picks a method, sees the destination to pay into, sends funds *outside* NexaTrade through their own banking/wallet/PayPal/etc., then submits an amount, optional reference, optional note, and a **receipt** (screenshot/photo/PDF, up to 3MB) through the app.
+3. The request is stored as `pending` and the user's balance is **untouched**. It shows up for the user under "Your deposit requests" and for admins under **Admin panel → Deposit requests**.
+4. An admin opens the receipt, then **Approves** (credits the claimed amount to the user's balance and logs a transaction) or **Rejects** (with a required reason shown to the user). Each request can only be reviewed once.
+
+No card numbers, bank credentials, or payment processor are ever handled by the app — it only stores the receipt file and the destination account admins choose to publish, so there is nothing resembling PCI-scoped data to protect. Receipts are stored as base64 in Postgres to avoid needing extra object-storage infrastructure; if you expect large volumes of large files, swap `receiptData` in `src/db/schema.ts` for a pointer to S3/Vercel Blob/etc. instead (see `src/lib/deposits.ts` for the current size/type limits).
+
+### Creating your first admin
+
+There is no admin by default. Set `ADMIN_EMAILS` (comma-separated) in your `.env` / Vercel environment variables to the email address(es) that should have admin access, e.g.:
+
+```env
+ADMIN_EMAILS="you@example.com"
+```
+
+Registering or logging in with a matching email automatically promotes that account to the `admin` role (see `src/lib/auth.ts`). Admins get an **Admin panel** link in their profile menu, or can go directly to `/admin`.

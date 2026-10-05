@@ -24,6 +24,15 @@ export async function getUser(request: NextRequest) {
   const rows = await db.select({ user: users }).from(sessions).innerJoin(users, eq(sessions.userId, users.id)).where(and(eq(sessions.tokenHash, hashToken(token)), gt(sessions.expiresAt, new Date()))).limit(1);
   return rows[0]?.user ?? null;
 }
+export function isAdminEmail(email: string) {
+  const list = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return list.includes(email.trim().toLowerCase());
+}
+export async function requireAdmin(request: NextRequest) {
+  const user = await getUser(request);
+  if (!user || user.role !== "admin") return null;
+  return user;
+}
 export async function setSession(response: NextResponse, userId: string) {
   const token = randomBytes(32).toString("hex");
   await db.insert(sessions).values({ tokenHash: hashToken(token), userId, expiresAt: new Date(Date.now() + days30) });

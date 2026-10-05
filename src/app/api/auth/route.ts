@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { checkPassword, clearSession, hashPassword, setSession } from "@/lib/auth";
+import { checkPassword, clearSession, hashPassword, isAdminEmail, setSession } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,12 +18,14 @@ export async function POST(request: NextRequest) {
       if (password.length < 8) return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
       const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
       if (existing) return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
-      const [user] = await db.insert(users).values({ name, email, passwordHash: hashPassword(password), cashBalance: "10000.00" }).returning();
+      const [user] = await db.insert(users).values({ name, email, passwordHash: hashPassword(password), cashBalance: "10000.00", role: isAdminEmail(email) ? "admin" : "user" }).returning();
       return await setSession(NextResponse.json({ success: true }), user.id);
     }
     if (action === "login") {
       const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
       if (!user?.passwordHash || !checkPassword(password, user.passwordHash)) return NextResponse.json({ error: "Incorrect email or password." }, { status: 401 });
+      // Allow promoting an existing account to admin by listing its email in ADMIN_EMAILS.
+      if (isAdminEmail(email) && user.role !== "admin") await db.update(users).set({ role: "admin" }).where(eq(users.id, user.id));
       return await setSession(NextResponse.json({ success: true }), user.id);
     }
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });

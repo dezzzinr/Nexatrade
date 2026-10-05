@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       db.select().from(copiedTraders).where(eq(copiedTraders.userId, user.id)),
       db.select().from(subscriptions).where(eq(subscriptions.userId, user.id)).orderBy(desc(subscriptions.createdAt)).limit(1),
     ]);
-    const response = NextResponse.json({ user: { id: user.id, name: user.name, email: user.email, isDemo: user.isDemo, cashBalance: Number(user.cashBalance) }, holdings: h, trades: t, transactions: tx, bots: b, copiedTraders: c, plan: p[0]?.plan ?? "Starter" });
+    const response = NextResponse.json({ user: { id: user.id, name: user.name, email: user.email, isDemo: user.isDemo, role: user.role, cashBalance: Number(user.cashBalance) }, holdings: h, trades: t, transactions: tx, bots: b, copiedTraders: c, plan: p[0]?.plan ?? "Starter" });
     if (fresh) await setSession(response, user.id);
     return response;
   } catch (error) { console.error("App GET:", error); return bad("Unable to load your workspace. Please try again.", 500); }
@@ -70,16 +70,17 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({ success: true, price: asset.price, total, message: `${side === "buy" ? "Bought" : "Sold"} ${quantity} ${symbol} at ${marketPrice(asset.price)}` });
     }
-    if (action === "deposit" || action === "withdrawal") {
+    if (action === "withdrawal") {
       if (!validAmount || amount < 1) return bad("Enter a valid amount of at least $1.");
       await db.transaction(async (tx) => {
         const [wallet] = await tx.select().from(users).where(eq(users.id, user.id)).for("update");
-        if (action === "withdrawal" && Number(wallet.cashBalance) < amount) throw new Error("Insufficient available balance.");
-        await tx.update(users).set({ cashBalance: sql`${users.cashBalance} ${sql.raw(action === "deposit" ? "+" : "-")} ${amount}` }).where(eq(users.id, user.id));
-        await tx.insert(transactions).values({ userId: user.id, type: action, amount: amount.toFixed(2), description: action === "deposit" ? "Demo wallet deposit" : "Demo wallet withdrawal" });
+        if (Number(wallet.cashBalance) < amount) throw new Error("Insufficient available balance.");
+        await tx.update(users).set({ cashBalance: sql`${users.cashBalance} - ${amount}` }).where(eq(users.id, user.id));
+        await tx.insert(transactions).values({ userId: user.id, type: "withdrawal", amount: amount.toFixed(2), description: "Demo wallet withdrawal" });
       });
-      return NextResponse.json({ success: true, message: `${action === "deposit" ? "Deposited" : "Withdrew"} $${amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} successfully` });
+      return NextResponse.json({ success: true, message: `Withdrew $${amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} successfully` });
     }
+    if (action === "deposit") return bad("Deposits now require submitting a payment receipt for admin review. Go to Deposit to get started.");
     if (action === "createBot") {
       if (!validAmount || amount < 10 || !["DCA", "Grid", "Momentum"].includes(body.strategy)) return bad("Choose a strategy and an allocation of at least $10.");
       await db.insert(bots).values({ userId: user.id, name: `${body.strategy} ${body.symbol && getAsset(body.symbol) ? body.symbol : "BTC"} Bot`, strategy: body.strategy, amount: amount.toFixed(2), active: true });
