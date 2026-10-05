@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { botProducts, botSubscriptions, users, transactions } from "@/db/schema";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
+import { blockedActionMessage } from "@/lib/accounts";
 import { SUBSCRIPTION_MS } from "@/lib/bots";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,8 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getUser(request);
     if (!user) return bad("Session expired. Please refresh the page.", 401);
+    const blocked = blockedActionMessage(user, "subscribe");
+    if (blocked) return bad(blocked, 403);
     const body = await request.json().catch(() => ({}));
     const botProductId = String(body.botProductId ?? "");
     if (!botProductId) return bad("Choose a bot to subscribe to.");

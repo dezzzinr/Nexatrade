@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
     if (action === "login") {
       const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
       if (!user?.passwordHash || !checkPassword(password, user.passwordHash)) return NextResponse.json({ error: "Incorrect email or password." }, { status: 401 });
+      if (user.accountStatus === "locked") return NextResponse.json({ error: "This account has been locked. Contact support for help." }, { status: 403 });
       // Allow promoting an existing account to admin by listing its email in ADMIN_EMAILS.
       if (isAdminEmail(email) && user.role !== "admin") await db.update(users).set({ role: "admin" }).where(eq(users.id, user.id));
       return await setSession(NextResponse.json({ success: true }), user.id);

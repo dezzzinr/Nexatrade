@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { depositAccounts, depositRequests } from "@/db/schema";
 import { desc, eq, and } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
+import { blockedActionMessage } from "@/lib/accounts";
 import { ALLOWED_RECEIPT_MIME_TYPES, DEPOSIT_METHOD_IDS, MAX_RECEIPT_BYTES, parseDataUrl } from "@/lib/deposits";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,8 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getUser(request);
     if (!user) return bad("Session expired. Please refresh the page.", 401);
+    const blocked = blockedActionMessage(user, "deposit");
+    if (blocked) return bad(blocked, 403);
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return bad("Invalid request.");
 

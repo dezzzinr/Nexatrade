@@ -68,7 +68,8 @@ The current market snapshot is available at `/api/market`; chart data at `/api/m
 - Admin-managed copy traders with paid 7-day subscriptions
 - Admin-managed subscription plans with paid 7-day (weekly) subscriptions and per-plan feature lists
 - Market observations, and a seed script (`npm run seed`) that populates 10 starter bots and 4 starter plans
-- Responsive interface using the NexaTrade blue theme
+- Full admin user management: create users, view/search every account, edit profiles, lock/suspend/limit accounts, send per-user notifications, place trades on a user's behalf, and directly edit balances (see below)
+- Responsive interface using the NexaTrade blue theme, including a fully mobile-responsive admin panel (sidebar on desktop, hamburger menu on mobile — same pattern as the main dashboard)
 
 **Simulation notice:** Market prices are real provider quotes, but there is no live exchange execution, autonomous bot execution, or automatic trade copying — subscribing to a trading bot or copy trader grants access to configure it / view their published stats for 7 days, it does not execute real trades or mirror real trades. Plan subscriptions are a simulated billing flow and do not enable any live exchange connectivity. Deposits and withdrawals model a real-world manual payment flow — see below.
 
@@ -128,6 +129,28 @@ Subscription plans follow the same admin-curated pattern — `npm run seed` prov
 5. Admins can edit a plan's price/description/features/feature order/featured flag at any time (price changes only affect future subscriptions), toggle active/hidden, or delete it. Deleting is blocked with a clear message if the plan has subscription history; deactivate instead to retire it while preserving records.
 
 **Seeded starter catalog (4 plans):** Starter ($0/wk — Paper trading dashboard, Market overview, Portfolio tracking, Basic trade history), Pro ($15/wk, featured — adds Trading bot subscriptions, Copy trading subscriptions, Advanced market signals, Priority insights), Elite ($35/wk — adds Unlimited bot instances, All trading signals, Advanced portfolio analytics, VIP experience), Institutional ($75/wk — adds Dedicated account concierge, Early access to new bots & traders, Custom portfolio reporting, Priority support response).
+
+## Admin user management
+
+The admin panel (`/admin`) has a **Users** section for full account management, alongside **Overview** stats and the existing Payments/Catalog tools — all behind the same mobile-responsive sidebar/hamburger shell as the main dashboard.
+
+**Account states.** Every user has an `accountStatus` of:
+- **Active** (default) — full access.
+- **Limited** — can log in and trade, but an admin may cap trades at a maximum size (`maxTradeAmount`) and/or block withdrawals only. Everything else works normally.
+- **Suspended** — can log in, but is view-only: trading, deposits, withdrawals, and all subscriptions (bot/copy/plan) are blocked.
+- **Locked** — cannot log in at all. If an already-logged-in user is locked, their next request is rejected with a clear message and their session is ended immediately (rather than silently handing them a fresh demo workspace).
+
+Set these from a user's **Manage users → [user] → Account standing** panel, with an optional reason shown to the user (e.g. "Pending KYC review").
+
+**Creating & editing users.** Admins can create a new user directly (name, email, password, starting balance) from **Manage users → Add user**, or search/browse every existing account in the table. Opening a user shows a full detail view: profile editing (name/email/role), account standing, balance editing, notifications, manual trade placement, their subscriptions (with the ability to end one early), and recent trades/transactions/deposit-withdrawal requests.
+
+**Balance edits.** The "Edit balance" panel lets an admin directly set a user's cash balance to any value. The difference is always logged as an `admin_credit` or `admin_debit` transaction in the user's transaction history (visible to them under Transactions) regardless of whether an admin note is supplied — a note is optional, but the audit trail is not.
+
+**Notifications.** Admins can send a one-off title + message to a single user from their detail view; it appears in that user's notification bell (top-right of the main app) and is marked read when they open it. There is no broadcast-to-all-users feature — notifications are always addressed to one specific account.
+
+**Manual trade placement.** For users who call or message support asking for a trade to be placed on their behalf, the "Place a manual trade" panel lets an admin buy/sell any asset for that user. It defaults to the current live market price, or an admin can supply a custom fill price (e.g. to honor a price quoted to the user over the phone). These trades bypass that user's own trade-size limit/suspension (the admin is explicitly authorizing it) and are tagged `placedBy` the admin — shown to the user as a small "Placed by support" badge in their trade history, with no admin name disclosed.
+
+**Subscriptions.** A user's active bot/copy/plan subscriptions are listed on their detail page with an "End now" action that ends the subscription immediately (sets its expiry to now) without deleting its history.
 
 ### Creating your first admin
 

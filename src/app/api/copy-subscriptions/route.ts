@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { copyTraders, copySubscriptions, users, transactions } from "@/db/schema";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
+import { blockedActionMessage } from "@/lib/accounts";
 import { SUBSCRIPTION_MS } from "@/lib/copy-trading";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +43,8 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getUser(request);
     if (!user) return bad("Session expired. Please refresh the page.", 401);
+    const blocked = blockedActionMessage(user, "subscribe");
+    if (blocked) return bad(blocked, 403);
     const body = await request.json().catch(() => ({}));
     const traderId = String(body.traderId ?? "");
     if (!traderId) return bad("Choose a trader to subscribe to.");

@@ -8,6 +8,18 @@ export const users = pgTable("users", {
   cashBalance: numeric("cash_balance", { precision: 18, scale: 2 }).notNull().default("12540.50"),
   isDemo: boolean("is_demo").notNull().default(false),
   role: text("role").notNull().default("user"),
+  // Account standing, set by admins under Admin panel -> Users:
+  //   active    - normal account, no restrictions
+  //   limited   - can log in and trade, but maxTradeAmount caps a single
+  //               trade's value and/or withdrawalsBlocked disables withdrawals
+  //   suspended - can log in and view data, but all mutating actions (trade,
+  //               deposit, withdraw, subscribe) are blocked
+  //   locked    - cannot log in at all; existing sessions are terminated
+  accountStatus: text("account_status").notNull().default("active"),
+  maxTradeAmount: numeric("max_trade_amount", { precision: 18, scale: 2 }), // only enforced while accountStatus = "limited"
+  withdrawalsBlocked: boolean("withdrawals_blocked").notNull().default(false), // only enforced while accountStatus = "limited"
+  statusReason: text("status_reason"), // admin-entered note shown to other admins (and partially to the user)
+  statusUpdatedAt: timestamp("status_updated_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -33,6 +45,10 @@ export const trades = pgTable("trades", {
   quantity: numeric("quantity", { precision: 24, scale: 8 }).notNull(),
   price: numeric("price", { precision: 24, scale: 8 }).notNull(),
   total: numeric("total", { precision: 18, scale: 2 }).notNull(),
+  // Set when an admin placed this trade on the user's behalf (e.g. a phone
+  // support request); null for trades the user placed themselves.
+  placedBy: uuid("placed_by").references(() => users.id, { onDelete: "set null" }),
+  adminNote: text("admin_note"), // optional note the admin left when placing the trade
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -150,6 +166,19 @@ export const planSubscriptions = pgTable("plan_subscriptions", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
+
+// Admin-sent notifications to a specific user, shown in their notification
+// bell. Each row is addressed to exactly one user; sentBy records which
+// admin sent it (null if the sending admin account is later deleted).
+export const notifications = pgTable("notifications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  sentBy: uuid("sent_by").references(() => users.id, { onDelete: "set null" }),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // Admin-managed destination accounts shown to users for a given deposit
 // method (e.g. a specific crypto wallet address, bank account, PayPal

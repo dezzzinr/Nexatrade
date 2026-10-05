@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { botInstances, botProducts, botSubscriptions } from "@/db/schema";
 import { and, eq, gt } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
+import { blockedActionMessage } from "@/lib/accounts";
 import { getAsset } from "@/lib/market";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       updates.amount = amount.toFixed(2);
     }
     if (typeof body.active === "boolean") {
-      if (body.active && !(await hasActiveSubscription(user.id, instance.botProductId))) return bad("Your subscription to this bot has expired. Resubscribe to resume it.");
+      if (body.active) {
+        const blocked = blockedActionMessage(user, "configure");
+        if (blocked) return bad(blocked, 403);
+        if (!(await hasActiveSubscription(user.id, instance.botProductId))) return bad("Your subscription to this bot has expired. Resubscribe to resume it.");
+      }
       updates.active = body.active;
     }
     if (Object.keys(updates).length === 0) return bad("Nothing to update.");

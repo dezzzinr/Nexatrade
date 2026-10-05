@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { plans, planSubscriptions, users, transactions } from "@/db/schema";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
+import { blockedActionMessage } from "@/lib/accounts";
 import { SUBSCRIPTION_MS } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,8 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getUser(request);
     if (!user) return bad("Session expired. Please refresh the page.", 401);
+    const blocked = blockedActionMessage(user, "subscribe");
+    if (blocked) return bad(blocked, 403);
     const body = await request.json().catch(() => ({}));
     const planId = String(body.planId ?? "");
     if (!planId) return bad("Choose a plan to subscribe to.");

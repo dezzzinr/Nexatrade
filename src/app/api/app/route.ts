@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { users, holdings, trades, transactions, planSubscriptions, plans } from "@/db/schema";
-import { desc, eq, and, sql, gt } from "drizzle-orm";
-import { getUser, createDemoUser, setSession } from "@/lib/auth";
+import { users, holdings, trades, transactions, planSubscriptions, plans, notifications } from "@/db/schema";
+import { desc, eq, and, sql, gt, isNull } from "drizzle-orm";
+import { getUser, createDemoUser, setSession, clearSession } from "@/lib/auth";
 import { getAsset, marketPrice } from "@/lib/market";
 import { getMarketSnapshot } from "@/lib/market-server";
+import { blockedActionMessage, tradeLimitMessage } from "@/lib/accounts";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -12,9 +13,15 @@ const bad = (message: string, status = 400) => NextResponse.json({ error: messag
 export async function GET(request: NextRequest) {
   try {
     let user = await getUser(request);
+    // A locked account can't be used even with a still-valid session cookie
+    // - kill the session and tell the client, instead of silently handing
+    // them a fresh demo workspace.
+    if (user && user.accountStatus === "locked") {
+      return await clearSession(request, NextResponse.json({ error: "This account has been locked. Contact support for help.", locked: true }, { status: 403 }));
+    }
     let fresh = false;
     if (!user) { user = await createDemoUser(); fresh = true; }
-    const [h, t, tx, currentPlan] = await Promise.all([
+    const [h, t, tx, currentPlan, notifRows, unreadCount] = await Promise.all([
       db.select().from(holdings).where(eq(holdings.userId, user.id)),
       db.select().from(trades).where(eq(trades.userId, user.id)).orderBy(desc(trades.createdAt)).limit(50),
       db.select().from(transactions).where(eq(transactions.userId, user.id)).orderBy(desc(transactions.createdAt)).limit(50),
@@ -24,8 +31,30 @@ export async function GET(request: NextRequest) {
         .where(and(eq(planSubscriptions.userId, user.id), gt(planSubscriptions.expiresAt, new Date())))
         .orderBy(desc(planSubscriptions.startedAt))
         .limit(1),
+      db.select().from(notifications).where(eq(notifications.userId, user.id)).orderBy(desc(notifications.createdAt)).limit(20),
+      db.select({ count: sql<number>`count(*)::int` }).from(notifications).where(and(eq(notifications.userId, user.id), isNull(notifications.readAt))),
     ]);
-    const response = NextResponse.json({ user: { id: user.id, name: user.name, email: user.email, isDemo: user.isDemo, role: user.role, cashBalance: Number(user.cashBalance) }, holdings: h, trades: t, transactions: tx, plan: currentPlan[0]?.planName ?? null, planExpiresAt: currentPlan[0]?.expiresAt ?? null });
+    const response = NextResponse.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        isDemo: user.isDemo,
+        role: user.role,
+        cashBalance: Number(user.cashBalance),
+        accountStatus: user.accountStatus,
+        maxTradeAmount: user.maxTradeAmount == null ? null : Number(user.maxTradeAmount),
+        withdrawalsBlocked: user.withdrawalsBlocked,
+        statusReason: user.statusReason,
+      },
+      holdings: h,
+      trades: t,
+      transactions: tx,
+      plan: currentPlan[0]?.planName ?? null,
+      planExpiresAt: currentPlan[0]?.expiresAt ?? null,
+      notifications: notifRows,
+      unreadNotifications: unreadCount[0]?.count ?? 0,
+    });
     if (fresh) await setSession(response, user.id);
     return response;
   } catch (error) { console.error("App GET:", error); return bad("Unable to load your workspace. Please try again.", 500); }
@@ -39,6 +68,8 @@ export async function POST(request: NextRequest) {
     const action = String(body.action ?? "");
 
     if (action === "trade") {
+      const blocked = blockedActionMessage(user, "trade");
+      if (blocked) return bad(blocked, 403);
       const symbol = String(body.symbol ?? "").toUpperCase();
       const side = body.side;
       const quantity = Number(body.quantity);
@@ -48,6 +79,8 @@ export async function POST(request: NextRequest) {
       if (market.status !== "live" || !asset || asset.price <= 0) return bad("Live market pricing is unavailable. Paper trading is paused until prices recover.", 503);
       const total = Math.round(quantity * asset.price * 100) / 100;
       if (total < 0.01) return bad("Minimum trade value is $0.01.");
+      const limitMsg = tradeLimitMessage(user, total);
+      if (limitMsg) return bad(limitMsg, 403);
       await db.transaction(async (tx) => {
         const [wallet] = await tx.select().from(users).where(eq(users.id, user.id)).for("update");
         const [existing] = await tx.select().from(holdings).where(and(eq(holdings.userId, user.id), eq(holdings.symbol, symbol))).for("update");
@@ -70,6 +103,10 @@ export async function POST(request: NextRequest) {
         await tx.insert(trades).values({ userId: user.id, symbol, side, quantity: quantity.toFixed(8), price: asset.price.toFixed(8), total: total.toFixed(2) });
       });
       return NextResponse.json({ success: true, price: asset.price, total, message: `${side === "buy" ? "Bought" : "Sold"} ${quantity} ${symbol} at ${marketPrice(asset.price)}` });
+    }
+    if (action === "markNotificationsRead") {
+      await db.update(notifications).set({ readAt: new Date() }).where(and(eq(notifications.userId, user.id), isNull(notifications.readAt)));
+      return NextResponse.json({ success: true });
     }
     if (action === "withdrawal") return bad("Withdrawals now require admin review. Go to Withdraw to get started.");
     if (action === "deposit") return bad("Deposits now require submitting a payment receipt for admin review. Go to Deposit to get started.");

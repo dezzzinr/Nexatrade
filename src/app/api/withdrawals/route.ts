@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { users, withdrawalRequests } from "@/db/schema";
 import { desc, eq, sql } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
+import { blockedActionMessage } from "@/lib/accounts";
 import { WITHDRAWAL_METHOD_IDS } from "@/lib/withdrawals";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,8 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getUser(request);
     if (!user) return bad("Session expired. Please refresh the page.", 401);
+    const blocked = blockedActionMessage(user, "withdraw");
+    if (blocked) return bad(blocked, 403);
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") return bad("Invalid request.");
 
