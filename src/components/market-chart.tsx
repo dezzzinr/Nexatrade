@@ -2,13 +2,16 @@
 
 import { useId, useState, type MouseEvent } from "react";
 import { Activity } from "lucide-react";
-import { marketPrice, type ChartPeriod, type ChartPoint } from "@/lib/market";
+import { type ChartPeriod, type ChartPoint } from "@/lib/market";
+import { formatCompactMoney, formatMarketPrice } from "@/lib/currency";
 
 type Props = {
   points: ChartPoint[];
   period: ChartPeriod;
   status: "loading" | "ready" | "error";
   label: string;
+  currency?: string;
+  rate?: number;
 };
 
 function timeLabel(timestamp: number, period: ChartPeriod) {
@@ -18,13 +21,10 @@ function timeLabel(timestamp: number, period: ChartPeriod) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function axisPrice(value: number) {
-  if (value >= 1000) return "$" + Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-  return marketPrice(value);
-}
-
-export default function MarketChart({ points, period, status, label }: Props) {
+export default function MarketChart({ points, period, status, label, currency = "USD", rate = 1 }: Props) {
   const [hover, setHover] = useState<number | null>(null);
+  const marketPrice = (value: number) => formatMarketPrice(value, currency, rate);
+  const axisPrice = (value: number) => (value >= 1000 ? formatCompactMoney(value, currency, rate) : marketPrice(value));
   const id = useId().replaceAll(":", "");
   if (status === "loading") {
     return <div className="live-chart-state chart-loading"><div className="chart-skeleton"/><span>Loading historical market data…</span></div>;

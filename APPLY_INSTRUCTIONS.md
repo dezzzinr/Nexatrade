@@ -1,6 +1,6 @@
-# Applying this update: Trading feature overhaul (order types, candlesticks, leverage)
+# Applying this update: User profiles, full registration, and region-based currency
 
-This zip contains the full NexaTrade project with a **complete trading-feature overhaul** added on top of everything delivered previously (deposits, withdrawals, copy trading, trading bots, plans, admin panel). Since I don't have push access to your GitHub repo, apply it manually:
+This zip contains the full NexaTrade project with a **complete user-profile system, a registration overhaul, and region-based currency conversion** added on top of everything delivered previously (deposits, withdrawals, copy trading, trading bots, plans, admin panel overhaul, trading feature overhaul). Since I don't have push access to your GitHub repo, apply it manually:
 
 ## 1. Copy the files into your repo
 
@@ -12,22 +12,26 @@ rsync -a --exclude='.git' --exclude='node_modules' --exclude='.env' --exclude='.
 cd /path/to/your/repo
 git status   # review the changes before committing
 git add -A
-git commit -m "Trading overhaul: order types, candlestick charts, leverage/margin trading"
+git commit -m "User profiles, registration overhaul, region-based currency conversion"
 git push
 ```
 
-Do **not** overwrite your `.env` — your `DATABASE_URL`, `ADMIN_EMAILS`, and CoinGecko keys stay as they are; nothing new is required in `.env` for this update.
+Do **not** overwrite your `.env` — your `DATABASE_URL`, `ADMIN_EMAILS`, and any API keys stay as they are. **No new environment variables are required** for this update; the FX rate lookup (`open.er-api.com`) is free and keyless.
 
 ## 2. Apply the new database schema
 
-This update adds two new tables, **`orders`** (pending/filled/cancelled limit, stop-loss, and take-profit orders) and **`positions`** (leveraged long/short margin positions), plus a nullable `order_id` foreign key on the existing `trades` table so a filled order links back to the trade it produced. Apply them with Drizzle:
+This update adds the following nullable columns to the existing `users` table — all additive, nothing destructive, no existing rows are touched:
+
+`username, date_of_birth, gender, country, state, city, address, phone, profile_photo, referral_code, security_question, security_answer_hash, terms_accepted_at, privacy_accepted_at, currency`
+
+Apply them with Drizzle:
 
 ```bash
 npm install
 npx drizzle-kit push
 ```
 
-Review the prompts carefully (it should only be adding tables/columns, nothing destructive). This is additive — no existing data is touched or dropped. If you use versioned migrations instead of `push` in production, generate a migration (`npx drizzle-kit generate`) and review it before applying.
+Review the prompts carefully — it should only be adding columns. Existing accounts (including seeded/demo ones) will simply have these fields as `null` (currency defaults to `"USD"`); users are prompted to fill in their profile from the new Profile page, but nothing is force-blocked.
 
 ## 3. Rebuild and redeploy
 
@@ -35,25 +39,27 @@ Review the prompts carefully (it should only be adding tables/columns, nothing d
 npm run build
 ```
 
-Then redeploy as usual (push to `main` for Vercel auto-deploy, or restart your process manager / container). Note: a full `next build` is memory-hungry — if it's slow or gets killed on a small VM, that's a resource constraint of that machine, not a code issue; it builds fine on normal-sized hardware (Vercel, a 2GB+ droplet, etc.). `npx tsc --noEmit` passes cleanly and is a faster sanity check if you just want to confirm the TypeScript compiles.
+Then redeploy as usual. `npx tsc --noEmit` passes cleanly and `npx eslint .` is clean except for a handful of pre-existing issues in `src/app/page.tsx` / `src/app/admin/page.tsx` that predate this update (mostly a newer stricter React Compiler lint rule flagging `Date.now()` calls during render in long-lived countdown/expiry displays) — none of that is new in this change, and none of it is a runtime bug.
 
 ## 4. What's new
 
-- **Candlestick charts.** The Trade page's line chart is replaced with an OHLC candlestick chart plus a volume bar strip, with 24H/7D/30D/1Y intervals and a hover tooltip. Backed by a new `/api/market/candles` route built on CoinGecko's `market_chart` endpoint.
-- **Full order types.** Spot trading now supports **Market**, **Limit**, **Stop-Loss**, and **Take-Profit** orders (Stop-Loss/Take-Profit are sell-side only, matching real exchanges). Pending orders show in an **Open orders** panel on the Trade page and can be cancelled anytime. A background sweep — piggy-backed onto the existing `/api/market` and `/api/app` traffic, no extra cron needed — checks every open order against the live price and fills it automatically when triggered.
-- **No fees, no slippage.** Every fill is exact and deterministic: market orders fill at the live price; limit orders fill at the better of your limit and the live price (never worse); stop-loss/take-profit fill at exactly their trigger price. Zero trading fees anywhere.
-- **Leverage / margin trading.** A new **Margin** tab next to Spot lets users open isolated-margin **long or short** positions at 2x–100x leverage, with a live liquidation-price preview, optional take-profit/stop-loss, and live unrealized P&L while open. Liquidation is automatic and capped at losing exactly the posted margin — never more.
-- **Trade History** now has three tabs — **Trades**, **Orders**, and **Positions** — each with its own stats cards and a full table of that user's history.
-- **Reservation safety.** Placing a sell order (or opening a position) reserves the underlying asset/cash so it can't be double-spent by a market trade or another pending order while it's open; this is enforced on every trade-executing endpoint, not just the new order-ticket one.
-- Admin manual trade placement (from the admin panel) intentionally stays spot/market-only — it was not extended to pending order types or leveraged positions.
+- **Registration form overhaul.** Replaces the old name/email/password modal with a two-section form: **Personal Information** (full name\*, date of birth\*, gender, country\*, state/province, city, residential address, phone\*, email\*, profile photo) and **Account Setup** (username\*, password\*, confirm password\*, referral/promo code, security question, security answer, Terms & Conditions\* checkbox, Privacy Policy\* checkbox). `*` = required.
+- **Username login.** Users can now log in with either their email or their username.
+- **Free-text security question.** Users write their own question and answer (not a preset list) at registration or later from their profile; it powers a self-service "Forgot password" flow (`getSecurityQuestion` → answer → `resetPasswordWithSecurityAnswer`) with no email/SMS infrastructure needed.
+- **Full profile page.** View/edit every registration field, re-upload a profile photo (stored as base64, like deposit receipts — no object storage required), change password, change/set the security question, change display currency, and see read-only Terms/Privacy acceptance timestamps + referral code. Pre-existing (seeded/demo) accounts can fill in all the newly-added fields here.
+- **Region-based currency, fully converted for display.** Selecting a country at registration sets a derived display currency (editable independently afterwards). The real ledger (balances, trades, transactions) stays USD everywhere internally — this is purely a display-layer conversion using a live USD-based FX rate table, applied to balances, trade prices, portfolio value, P&L, 24h volume, market cap, and chart axes/tooltips across the whole app. Trade amount *inputs* stay USD-denominated (for exact, simple order math) with a small converted-amount hint shown underneath when the user's currency isn't USD.
+- **Admin visibility.** A user's username, phone, country, and display currency now show read-only on their detail page in `/admin → Manage users`, next to the existing editable name/email/role fields.
+- **Backfill-friendly.** No migration script forces old accounts to fill anything in; every new field is nullable and the app treats missing values as "not set yet," prompting the user from their profile page rather than blocking login.
 
 ## 5. Testing it yourself
 
-1. Log in as a regular user and go to **Trade**.
-2. Try a **Limit** buy below the current price — it should sit in "Open orders" until the price reaches it (or cancel it manually).
-3. Try a **Limit** buy *above* the current price — it should fill immediately, at the live price (not your limit), since that's the better price for you.
-4. Buy a small amount of an asset, then place a **Stop-Loss** sell order on it — confirm you can no longer market-sell more of that asset than you have left unreserved.
-5. Switch to the **Margin** tab, open a small leveraged long or short position, watch its live P&L update, then close it manually (or set a tight take-profit/stop-loss and let the price trigger it).
-6. Check **Trade History → Orders** and **→ Positions** to see the full history with status pills and realized P&L.
+1. Register a new account — fill in the full two-section form, including a security question/answer and a profile photo. Confirm you land in the app logged in.
+2. Log out, then log back in using the **username** you chose instead of the email.
+3. Click "Forgot password," enter your username, answer your security question, and set a new password. Try a wrong answer first to confirm it's rejected, then the right answer to confirm the reset works and you can log in with the new password.
+4. Open your Profile page: edit a few fields (city, gender, address), change your display currency to something other than USD, and save. Confirm balances/prices across the app (Overview, Markets, Trade) now show in that currency, with the FX rate applied consistently.
+5. From the Trade page, note the Amount input still shows USD but now shows a small "≈ [your currency]" hint underneath when your currency isn't USD.
+6. Change your password from the Profile page (current + new + confirm), log out, and confirm the new password works and the old one doesn't.
+7. As an admin, open **Manage users → [any user]** and confirm their username, phone, country, and display currency show up read-only.
+8. Log in as an existing/seeded account created before this update — confirm it still logs in fine and its profile page shows the new fields as blank/"Not set," editable going forward.
 
-No real money, card data, or payment processor is involved anywhere in this app — it remains a paper-trading simulation, as before. Leverage and order types are fully simulated; there is no real exchange connectivity.
+No real money, card data, or payment processor is involved anywhere in this app — it remains a paper-trading simulation, as before.

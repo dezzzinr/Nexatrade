@@ -7,6 +7,7 @@ import { getAsset, marketPrice } from "@/lib/market";
 import { getMarketSnapshot } from "@/lib/market-server";
 import { blockedActionMessage, tradeLimitMessage } from "@/lib/accounts";
 import { executeSpotFill, reservedBuyCash, reservedSellQuantity, sweepForUser } from "@/lib/trading-engine";
+import { getFxRate } from "@/lib/fx-server";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
         }
       } catch (error) { console.error("App GET sweep:", error); }
     }
-    const [h, t, tx, currentPlan, notifRows, unreadCount] = await Promise.all([
+    const [h, t, tx, currentPlan, notifRows, unreadCount, fx] = await Promise.all([
       db.select().from(holdings).where(eq(holdings.userId, user.id)),
       db.select().from(trades).where(eq(trades.userId, user.id)).orderBy(desc(trades.createdAt)).limit(50),
       db.select().from(transactions).where(eq(transactions.userId, user.id)).orderBy(desc(transactions.createdAt)).limit(50),
@@ -48,12 +49,16 @@ export async function GET(request: NextRequest) {
         .limit(1),
       db.select().from(notifications).where(eq(notifications.userId, user.id)).orderBy(desc(notifications.createdAt)).limit(20),
       db.select({ count: sql<number>`count(*)::int` }).from(notifications).where(and(eq(notifications.userId, user.id), isNull(notifications.readAt))),
+      // Display-only FX rate for this user's chosen currency; the ledger
+      // below (cashBalance, trades, transactions) always stays in USD.
+      getFxRate(user.currency ?? "USD"),
     ]);
     const response = NextResponse.json({
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
+        username: user.username,
         isDemo: user.isDemo,
         role: user.role,
         cashBalance: Number(user.cashBalance),
@@ -61,6 +66,8 @@ export async function GET(request: NextRequest) {
         maxTradeAmount: user.maxTradeAmount == null ? null : Number(user.maxTradeAmount),
         withdrawalsBlocked: user.withdrawalsBlocked,
         statusReason: user.statusReason,
+        profilePhoto: user.profilePhoto,
+        currency: user.currency ?? "USD",
       },
       holdings: h,
       trades: t,
@@ -69,6 +76,7 @@ export async function GET(request: NextRequest) {
       planExpiresAt: currentPlan[0]?.expiresAt ?? null,
       notifications: notifRows,
       unreadNotifications: unreadCount[0]?.count ?? 0,
+      fx: { currency: user.currency ?? "USD", rate: fx.rate, status: fx.status, updatedAt: fx.updatedAt },
     });
     if (fresh) await setSession(response, user.id);
     return response;

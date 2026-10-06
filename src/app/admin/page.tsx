@@ -26,7 +26,7 @@ type BotProductRow = { id: string; name: string; description: string; strategy: 
 type PlanRow = { id: string; name: string; description: string; priceWeekly: string; features: string[]; isFeatured: boolean; sortOrder: string; isActive: boolean; activeSubscribers: number; createdAt: string };
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-type AdminUserRow = { id: string; name: string; email: string; role: string; isDemo: boolean; cashBalance: string; accountStatus: string; maxTradeAmount: string | null; withdrawalsBlocked: boolean; statusReason: string | null; statusUpdatedAt: string | null; createdAt: string };
+type AdminUserRow = { id: string; name: string; email: string; role: string; isDemo: boolean; cashBalance: string; accountStatus: string; maxTradeAmount: string | null; withdrawalsBlocked: boolean; statusReason: string | null; statusUpdatedAt: string | null; createdAt: string; username?: string | null; phone?: string | null; country?: string | null; currency?: string | null };
 type SubRow = { id: string; amount: string; startedAt: string; expiresAt: string; botName?: string; traderName?: string; planName?: string };
 type UserDetail = {
   user: AdminUserRow;
@@ -695,6 +695,10 @@ export default function AdminPage() {
                     <div className="select-wrap"><select value={editUserForm.role} onChange={e => setEditUserForm({ ...editUserForm, role: e.target.value })}><option value="user">User</option><option value="admin">Admin</option></select><ChevronDown size={16}/></div>
                     <button className="primary-btn full-btn" disabled={editUserBusy} style={{ marginTop: 14 }}><Pencil size={15}/> {editUserBusy ? "Saving..." : "Save profile"}</button>
                   </form>
+                  <div className="profile-readonly-row"><span>Username</span><span>{userDetail.user.username ? `@${userDetail.user.username}` : "Not set"}</span></div>
+                  <div className="profile-readonly-row"><span>Phone</span><span>{userDetail.user.phone ?? "Not set"}</span></div>
+                  <div className="profile-readonly-row"><span>Country</span><span>{userDetail.user.country ?? "Not set"}</span></div>
+                  <div className="profile-readonly-row"><span>Display currency</span><span>{userDetail.user.currency ?? "USD"}</span></div>
                 </section>
 
                 <section className="panel admin-panel">

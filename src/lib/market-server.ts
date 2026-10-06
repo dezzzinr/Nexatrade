@@ -64,6 +64,8 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
         change7d: safeNumber(value.price_change_percentage_7d_in_currency) ?? 0,
         volume: compactMoney(safeNumber(value.total_volume) ?? 0),
         cap: compactMoney(safeNumber(value.market_cap) ?? 0),
+        volumeUsd: safeNumber(value.total_volume) ?? 0,
+        capUsd: safeNumber(value.market_cap) ?? 0,
         chart,
         rank: safeNumber(value.market_cap_rank),
         high24h: safeNumber(value.high_24h),

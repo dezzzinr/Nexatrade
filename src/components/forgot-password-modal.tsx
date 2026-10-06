@@ -1,0 +1,96 @@
+"use client";
+
+import { useState } from "react";
+import { ArrowRight, CircleHelp, LockKeyhole, X } from "lucide-react";
+
+type Props = {
+  onClose: () => void;
+  onSwitchToLogin: () => void;
+};
+
+export default function ForgotPasswordModal({ onClose, onSwitchToLogin }: Props) {
+  const [step, setStep] = useState<"identify" | "answer" | "done">("identify");
+  const [identifier, setIdentifier] = useState("");
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const lookUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!identifier.trim()) return setError("Enter your email or username.");
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "getSecurityQuestion", identifier: identifier.trim() }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Could not find a security question for that account.");
+      setQuestion(result.question);
+      setStep("answer");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const reset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!answer.trim()) return setError("Enter your answer.");
+    if (newPassword.length < 8) return setError("New password must be at least 8 characters.");
+    if (newPassword !== confirmPassword) return setError("Passwords do not match.");
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "resetPasswordWithSecurityAnswer", identifier: identifier.trim(), answer, newPassword }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "That answer doesn't match our records.");
+      setStep("done");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="auth-modal">
+        <button className="modal-close" onClick={onClose} aria-label="Close"><X size={20} /></button>
+        <div className="modal-brand"><div className="brand-icon"><CircleHelp size={20} strokeWidth={3} /></div>Reset password</div>
+        {step === "identify" && <>
+          <h2>Forgot your password?</h2>
+          <p>Enter your email or username and we&apos;ll ask your security question.</p>
+          <form onSubmit={lookUp}>
+            <label className="input-label">Email or username</label>
+            <input className="text-input" placeholder="you@example.com or username" value={identifier} onChange={(e) => setIdentifier(e.target.value)} required />
+            {error && <p className="form-error-text">{error}</p>}
+            <button className="primary-btn full-btn" disabled={submitting}>{submitting ? "Looking up..." : "Continue"}<ArrowRight size={17} /></button>
+          </form>
+        </>}
+        {step === "answer" && <>
+          <h2>Answer your security question</h2>
+          <p>{question}</p>
+          <form onSubmit={reset}>
+            <label className="input-label">Your answer</label>
+            <input className="text-input" value={answer} onChange={(e) => setAnswer(e.target.value)} required />
+            <label className="input-label">New password</label>
+            <input className="text-input" type="password" placeholder="At least 8 characters" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} />
+            <label className="input-label">Confirm new password</label>
+            <input className="text-input" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={8} />
+            {error && <p className="form-error-text">{error}</p>}
+            <button className="primary-btn full-btn" disabled={submitting}>{submitting ? "Resetting..." : "Reset password"}<ArrowRight size={17} /></button>
+          </form>
+        </>}
+        {step === "done" && <>
+          <h2>Password updated</h2>
+          <p>Your password has been reset. You can now sign in with your new password.</p>
+          <button className="primary-btn full-btn" onClick={onSwitchToLogin}>Sign in<ArrowRight size={17} /></button>
+        </>}
+        <div className="modal-security"><LockKeyhole size={14} /> Your account is secured with encrypted credentials</div>
+      </div>
+    </div>
+  );
+}

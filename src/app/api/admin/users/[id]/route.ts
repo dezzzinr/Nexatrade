@@ -21,6 +21,12 @@ const PUBLIC_COLUMNS = {
   statusReason: users.statusReason,
   statusUpdatedAt: users.statusUpdatedAt,
   createdAt: users.createdAt,
+  // Read-only profile fields added by the registration overhaul - admins can
+  // view these but editing them is left to the user's own profile page.
+  username: users.username,
+  phone: users.phone,
+  country: users.country,
+  currency: users.currency,
 };
 
 // Full profile for a single user, used by the admin "manage user" screen:

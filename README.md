@@ -173,4 +173,18 @@ There is no admin by default. Set `ADMIN_EMAILS` (comma-separated) in your `.env
 ADMIN_EMAILS="you@example.com"
 ```
 
+## User profiles, full registration, and region-based currency
+
+**Registration** is now a two-section form — Personal Information (full name, date of birth, gender, country, state/province, city, address, phone, email, profile photo — all required except gender/state/city/address/photo) and Account Setup (username, password, confirm password, referral/promo code, a free-text security question + answer, and required Terms & Conditions / Privacy Policy checkboxes). Users can log in with either their **email or username**. Accounts created before this feature (seeded/demo users) have all these fields as `null`/defaults and are prompted to fill them in from their profile page; nothing is retroactively required to keep using the app.
+
+**Profile page** (accessible from the account menu) lets a logged-in user view and edit every field above, re-upload their photo (stored as a base64 data URL, same pattern as deposit receipts — no object storage required), change their password, change or set their security question/answer, and change their display currency. Terms/Privacy acceptance timestamps and referral code are shown read-only.
+
+**Currency conversion is a full display conversion, not a label.** The ledger (`cashBalance`, trade amounts, transaction amounts) always stays in USD — nothing about money storage or trading math changed. Every current user, on login/registration, gets a `currency` derived from their selected country (e.g. Nigeria → NGN, UK → GBP), editable independently afterwards from their profile. The app fetches a live USD-based FX rate table (`https://open.er-api.com/v6/latest/USD`, cached server-side) and converts every dollar amount shown to that user — balances, prices, portfolio value, P&L, 24h volume, market cap, chart axes/tooltips — into their chosen currency at render time. Trade amount inputs stay USD-denominated for submission (to keep the ledger and order math simple and exact), with a small "≈ [converted amount]" hint shown under the input when the user's currency isn't USD.
+
+**Admin visibility.** A user's username, phone, country, and display currency are shown read-only on their detail page in `/admin → Manage users`, alongside the existing editable name/email/role fields. These are not editable by an admin — profile changes other than account status/balance/notifications remain the user's own to make.
+
+### New environment variable
+
+None required — the FX rate API used (`open.er-api.com`) is free and keyless. If you'd rather point at a different FX provider or a paid one with higher reliability guarantees, swap the URL in `src/lib/fx-server.ts`.
+
 Registering or logging in with a matching email automatically promotes that account to the `admin` role (see `src/lib/auth.ts`). Admins get an **Admin panel** link in their profile menu, or can go directly to `/admin`.

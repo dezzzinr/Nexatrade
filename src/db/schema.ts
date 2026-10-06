@@ -4,10 +4,32 @@ export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   email: text("email").unique(),
+  username: text("username").unique(), // optional second login identifier; unique when set
   passwordHash: text("password_hash"),
   cashBalance: numeric("cash_balance", { precision: 18, scale: 2 }).notNull().default("12540.50"),
   isDemo: boolean("is_demo").notNull().default(false),
   role: text("role").notNull().default("user"),
+  // --- Profile: personal information (collected at registration, editable
+  // from the Profile page afterwards). All nullable so existing/demo/seed
+  // accounts keep working without backfilling this data. ---------------------
+  dateOfBirth: text("date_of_birth"), // stored as YYYY-MM-DD (no time zone semantics needed)
+  gender: text("gender"), // free-form (e.g. "male" | "female" | "non_binary" | "prefer_not_to_say" | custom)
+  country: text("country"), // ISO 3166-1 alpha-2 code, see src/lib/countries.ts
+  state: text("state"),
+  city: text("city"),
+  address: text("address"),
+  phone: text("phone"),
+  profilePhoto: text("profile_photo"), // base64 data URL, same storage pattern as deposit receipts
+  // --- Profile: account setup -------------------------------------------
+  referralCode: text("referral_code"), // free-text, stored for record-keeping only (no validation/bonus logic yet)
+  securityQuestion: text("security_question"), // user-authored question, shown back to them verbatim
+  securityAnswerHash: text("security_answer_hash"), // hashed like a password (answer is normalized to lowercase/trim first)
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  privacyAcceptedAt: timestamp("privacy_accepted_at", { withTimezone: true }),
+  // Preferred display currency (ISO 4217). Defaults from `country` at signup
+  // via src/lib/countries.ts, but can be changed independently afterwards.
+  // This only affects how amounts are *displayed* - the ledger stays USD.
+  currency: text("currency").notNull().default("USD"),
   // Account standing, set by admins under Admin panel -> Users:
   //   active    - normal account, no restrictions
   //   limited   - can log in and trade, but maxTradeAmount caps a single

@@ -14,6 +14,8 @@ export type Asset = {
   change7d: number;
   volume: string;
   cap: string;
+  volumeUsd: number;
+  capUsd: number;
   chart: number[];
   rank: number | null;
   high24h: number | null;
@@ -49,6 +51,8 @@ export const assets: Asset[] = catalog.map((coin) => ({
   change7d: 0,
   volume: "—",
   cap: "—",
+  volumeUsd: 0,
+  capUsd: 0,
   chart: [],
   rank: null,
   high24h: null,
