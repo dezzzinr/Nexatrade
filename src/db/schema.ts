@@ -30,6 +30,11 @@ export const users = pgTable("users", {
   // via src/lib/countries.ts, but can be changed independently afterwards.
   // This only affects how amounts are *displayed* - the ledger stays USD.
   currency: text("currency").notNull().default("USD"),
+  // Preferred UI language (ISO 639-1 code, e.g. "en" | "es" | "fr" | "pt" |
+  // "ar" | "hi" | "zh" | "ru"). Always defaults to English - unlike currency,
+  // this is never auto-derived from country, only ever set by the user from
+  // the language switcher. See src/lib/i18n.ts for the supported list.
+  language: text("language").notNull().default("en"),
   // Account standing, set by admins under Admin panel -> Users:
   //   active    - normal account, no restrictions
   //   limited   - can log in and trade, but maxTradeAmount caps a single
@@ -316,4 +321,20 @@ export const withdrawalRequests = pgTable("withdrawal_requests", {
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Server-side cache of machine-translated UI strings, keyed by target
+// language + a hash of the English source text. Populated lazily the first
+// time any user requests a given language (see /api/translate) so the
+// translation API is only ever called once per unique string per language,
+// no matter how many users or sessions request it afterwards.
+export const translationCache = pgTable("translation_cache", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  language: text("language").notNull(),
+  sourceHash: text("source_hash").notNull(),
+  sourceText: text("source_text").notNull(),
+  translatedText: text("translated_text").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  uniqueLangHash: uniqueIndex("translation_cache_lang_hash_idx").on(table.language, table.sourceHash),
+}));
 

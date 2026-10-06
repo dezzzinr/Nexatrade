@@ -120,3 +120,20 @@
 .profile-save-row .primary-btn{width:auto;padding:0 18px}
 .referral-code-box{display:flex;align-items:center;justify-content:space-between;background:#f7f8fb;border:1px dashed #d8dce8;border-radius:9px;padding:12px 14px;font-weight:700;color:#26314a;letter-spacing:.5px}
 @media(max-width:860px){.profile-grid{grid-template-columns:1fr}.register-modal{max-width:94vw;padding:24px 18px 28px}.form-grid{grid-template-columns:1fr}.profile-header-card{flex-direction:column;text-align:center}}
+
+/* Language selector */
+.language-popover{width:230px;padding:8px;max-height:360px;overflow-y:auto}
+.language-translating{font-size:10px;color:var(--muted);font-weight:600}
+.language-option{width:100%;display:flex;align-items:center;gap:10px;background:none;border:0;border-radius:7px;padding:9px 10px;color:#44506a;text-align:left;font-size:12.5px;font-weight:600}
+.language-option:hover{background:#f5f5ff;color:var(--blue)}
+.language-option.selected{background:#ececff;color:var(--blue)}
+.language-flag{font-size:16px;line-height:1}
+.language-name{flex:1}
+
+/* Demo account upgrade gate */
+.demo-gate-modal{width:100%;max-width:420px;background:#fff;border-radius:18px;padding:30px;position:relative;box-shadow:0 25px 70px #05092040;text-align:center}
+.demo-gate-icon{width:52px;height:52px;border-radius:14px;background:#ededff;color:var(--blue);display:grid;place-items:center;margin:0 auto 16px}
+.demo-gate-modal h2{font-size:21px;letter-spacing:-.5px;margin:0 0 10px}
+.demo-gate-modal p{color:#8894aa;font-size:12.5px;line-height:1.6;margin:0 0 22px}
+.demo-gate-actions{display:flex;flex-direction:column;gap:10px}
+.demo-gate-actions .primary-btn,.demo-gate-actions .outline-btn{width:100%;height:42px}

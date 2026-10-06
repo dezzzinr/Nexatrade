@@ -7,6 +7,7 @@ import { ALLOWED_AVATAR_MIME_TYPES, calculateAge, isValidEmail, isValidUsername,
 import { parseDataUrl } from "@/lib/deposits";
 import { countryByCode } from "@/lib/countries";
 import { getFxRate } from "@/lib/fx-server";
+import { isLanguageCode } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -32,6 +33,7 @@ function publicProfile(user: typeof users.$inferSelect) {
     termsAcceptedAt: user.termsAcceptedAt,
     privacyAcceptedAt: user.privacyAcceptedAt,
     currency: user.currency,
+    language: user.language,
     createdAt: user.createdAt,
   };
 }
@@ -109,6 +111,11 @@ export async function PATCH(request: NextRequest) {
         const currency = String(body.currency).trim().toUpperCase();
         if (!/^[A-Z]{3}$/.test(currency)) return bad("Select a valid currency.");
         updates.currency = currency;
+      }
+      if (body.language !== undefined) {
+        const language = String(body.language).trim().toLowerCase();
+        if (!isLanguageCode(language)) return bad("Select a supported language.");
+        updates.language = language;
       }
       if (body.profilePhoto !== undefined) {
         if (body.profilePhoto === null) {

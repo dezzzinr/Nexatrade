@@ -188,3 +188,17 @@ ADMIN_EMAILS="you@example.com"
 None required — the FX rate API used (`open.er-api.com`) is free and keyless. If you'd rather point at a different FX provider or a paid one with higher reliability guarantees, swap the URL in `src/lib/fx-server.ts`.
 
 Registering or logging in with a matching email automatically promotes that account to the `admin` role (see `src/lib/auth.ts`). Admins get an **Admin panel** link in their profile menu, or can go directly to `/admin`.
+
+## Language selector, live translation, tab persistence, and demo-account gating
+
+**Language selector.** A globe icon in the topbar, plus a "Display language" dropdown on the Profile page, let any user switch the app's chrome between English, Español, Français, Português, العربية, हिन्दी, 中文, and Русский. The choice **always defaults to English** and is **only ever set manually** — unlike currency, it's never derived from the user's country. Signed-in users' choice is saved to their account (`users.language`) and re-adopted on any device/browser that doesn't already have its own local choice; guests get a local-only (per-browser) choice.
+
+**Live translation, not a hand-written dictionary.** Translated text comes from MyMemory (`api.mymemory.translated.net`), a free, keyless machine-translation API, called via a small internal `/api/translate` route. Every translated string is cached forever per language in a new `translation_cache` table (keyed by a hash of the source text), so the API is called at most once per unique string per language across the app's whole lifetime — not once per user, not once per session. Any string that fails to translate (daily anonymous-tier quota reached, network error, etc.) falls back to the original English text rather than breaking the UI; raw HTML/markup artifacts that MyMemory's translation-memory lookups occasionally return for very short strings are stripped before caching. Translation coverage focuses on navigation, the topbar, every page's heading/description, and the full login/register/forgot-password/demo-upgrade modals — the highest-visibility chrome, using the same "chrome is translated, raw data stays canonical" scoping already used for currency conversion.
+
+**Tab persistence across refresh.** The active tab is remembered in `localStorage` (`nexa_last_page`) and restored on reload, so refreshing the browser no longer drops you back to Overview.
+
+**Demo-account gating.** Demo/guest users can still browse everything (dashboards, markets, catalogs) with no restriction. The moment a demo user attempts a mutating action — quick/market trade, limit/stop/margin order, deposit, withdrawal, or a bot/copy-trader/plan subscription — a "Create a free account to continue" modal interrupts with Sign up / Sign in / Keep exploring options, enforced both client-side (`requireRealAccount()` guard in `src/app/page.tsx`) and server-side (`blockedActionMessage()` in `src/lib/accounts.ts`, so it can't be bypassed by calling the API directly). The same modal also appears automatically after roughly two minutes of demo browsing, as a proactive nudge.
+
+### New environment variable
+
+None required — MyMemory's translation endpoint is free and keyless. If you want higher translation quality/limits in production, swap the implementation in `src/lib/translate-server.ts` (`translateOne`) for a paid provider (DeepL, Google Cloud Translation, Azure Translator) — the caching layer and the rest of the app don't need to change.

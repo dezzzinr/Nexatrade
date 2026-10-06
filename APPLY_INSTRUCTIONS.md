@@ -1,10 +1,8 @@
-# Applying this update: User profiles, full registration, and region-based currency
+# Applying this update: Language selector, tab persistence, and demo-account gating
 
-This zip contains the full NexaTrade project with a **complete user-profile system, a registration overhaul, and region-based currency conversion** added on top of everything delivered previously (deposits, withdrawals, copy trading, trading bots, plans, admin panel overhaul, trading feature overhaul). Since I don't have push access to your GitHub repo, apply it manually:
+This zip contains the full NexaTrade project with **three new features** added on top of everything delivered previously (trading overhaul, profit targets, user profiles/registration, region-based currency): a **language selector with live translation**, a fix so **refreshing the app no longer resets you to the Overview tab**, and **demo-account gating** that prompts guests to sign up/log in instead of letting them silently trade/deposit/withdraw/subscribe forever. Since I don't have push access to your GitHub repo, apply it manually:
 
 ## 1. Copy the files into your repo
-
-Copy every file from this zip over your existing project, preserving the folder structure (this is a full project snapshot, not a diff — it's safe to just overwrite):
 
 ```bash
 # from a fresh copy of your repo
@@ -12,26 +10,25 @@ rsync -a --exclude='.git' --exclude='node_modules' --exclude='.env' --exclude='.
 cd /path/to/your/repo
 git status   # review the changes before committing
 git add -A
-git commit -m "User profiles, registration overhaul, region-based currency conversion"
+git commit -m "Language selector + live translation, tab persistence, demo-account gating"
 git push
 ```
 
-Do **not** overwrite your `.env` — your `DATABASE_URL`, `ADMIN_EMAILS`, and any API keys stay as they are. **No new environment variables are required** for this update; the FX rate lookup (`open.er-api.com`) is free and keyless.
+Do **not** overwrite your `.env`. **No new environment variables or API keys are required** — translation uses MyMemory (`api.mymemory.translated.net`), a free, keyless machine-translation API.
 
 ## 2. Apply the new database schema
 
-This update adds the following nullable columns to the existing `users` table — all additive, nothing destructive, no existing rows are touched:
+This adds one nullable column and one new table — both additive, nothing destructive:
 
-`username, date_of_birth, gender, country, state, city, address, phone, profile_photo, referral_code, security_question, security_answer_hash, terms_accepted_at, privacy_accepted_at, currency`
-
-Apply them with Drizzle:
+- `users.language` (text, nullable — defaults to `"en"` when unset)
+- `translation_cache` (new table: caches every translated string per language so the translation API is only ever called once per unique string/language combination, across every user forever)
 
 ```bash
 npm install
 npx drizzle-kit push
 ```
 
-Review the prompts carefully — it should only be adding columns. Existing accounts (including seeded/demo ones) will simply have these fields as `null` (currency defaults to `"USD"`); users are prompted to fill in their profile from the new Profile page, but nothing is force-blocked.
+Review the prompts — it should only add a column and a new table.
 
 ## 3. Rebuild and redeploy
 
@@ -39,27 +36,33 @@ Review the prompts carefully — it should only be adding columns. Existing acco
 npm run build
 ```
 
-Then redeploy as usual. `npx tsc --noEmit` passes cleanly and `npx eslint .` is clean except for a handful of pre-existing issues in `src/app/page.tsx` / `src/app/admin/page.tsx` that predate this update (mostly a newer stricter React Compiler lint rule flagging `Date.now()` calls during render in long-lived countdown/expiry displays) — none of that is new in this change, and none of it is a runtime bug.
+`npx tsc --noEmit` passes cleanly. `npx eslint .` is clean except for a handful of pre-existing issues in `src/app/page.tsx` (a stricter React Compiler lint rule flagging `Date.now()` calls during render in long-lived countdown/expiry displays, and a couple of `set-state-in-effect` warnings in data-loading effects) — these all predate this update and are not runtime bugs.
 
 ## 4. What's new
 
-- **Registration form overhaul.** Replaces the old name/email/password modal with a two-section form: **Personal Information** (full name\*, date of birth\*, gender, country\*, state/province, city, residential address, phone\*, email\*, profile photo) and **Account Setup** (username\*, password\*, confirm password\*, referral/promo code, security question, security answer, Terms & Conditions\* checkbox, Privacy Policy\* checkbox). `*` = required.
-- **Username login.** Users can now log in with either their email or their username.
-- **Free-text security question.** Users write their own question and answer (not a preset list) at registration or later from their profile; it powers a self-service "Forgot password" flow (`getSecurityQuestion` → answer → `resetPasswordWithSecurityAnswer`) with no email/SMS infrastructure needed.
-- **Full profile page.** View/edit every registration field, re-upload a profile photo (stored as base64, like deposit receipts — no object storage required), change password, change/set the security question, change display currency, and see read-only Terms/Privacy acceptance timestamps + referral code. Pre-existing (seeded/demo) accounts can fill in all the newly-added fields here.
-- **Region-based currency, fully converted for display.** Selecting a country at registration sets a derived display currency (editable independently afterwards). The real ledger (balances, trades, transactions) stays USD everywhere internally — this is purely a display-layer conversion using a live USD-based FX rate table, applied to balances, trade prices, portfolio value, P&L, 24h volume, market cap, and chart axes/tooltips across the whole app. Trade amount *inputs* stay USD-denominated (for exact, simple order math) with a small converted-amount hint shown underneath when the user's currency isn't USD.
-- **Admin visibility.** A user's username, phone, country, and display currency now show read-only on their detail page in `/admin → Manage users`, next to the existing editable name/email/role fields.
-- **Backfill-friendly.** No migration script forces old accounts to fill anything in; every new field is nullable and the app treats missing values as "not set yet," prompting the user from their profile page rather than blocking login.
+### Language selector & live translation
+- A **globe icon** in the topbar opens a language popover with 8 languages: English, Español, Français, Português, العربية, हिन्दी, 中文, Русский.
+- Language **always defaults to English** and is **only ever changed manually** by the user (never auto-detected from country, unlike currency) — matching your explicit instruction.
+- Signed-in users also get a **"Display language" selector on the Profile page** (next to Display currency); picking a language there or from the topbar syncs both ways and persists to the user's account, so it carries across devices/browsers. Guests/demo users get a local-only choice (nothing to persist to).
+- Translation is produced by a **live free translation API at runtime** (MyMemory) — not a hand-written dictionary. Every translated string is cached forever in the new `translation_cache` table, so the API is called at most once per unique string per language, no matter how many users switch to that language.
+- **Known limitation of the free API:** MyMemory is a translation-memory lookup service, not a dedicated LLM translator, so very short/ambiguous UI words (e.g. a bare "Trade" or "Portfolio" with no surrounding sentence) occasionally come back as an imprecise or oddly-matched translation, and the anonymous tier has a modest daily quota shared across all users of this API key-less endpoint. The app is built to degrade gracefully — any string that fails to translate (quota hit, network hiccup, etc.) simply falls back to showing the original English text rather than breaking the UI. If you want higher quality/limits later, this is a one-function swap (`src/lib/translate-server.ts` → `translateOne`) to a paid provider (DeepL, Google Cloud Translation, Azure Translator, etc.) with no other code changes needed.
+- Translation scope was intentionally focused on navigation, the topbar, all page headings/descriptions, and the full login/register/forgot-password/demo-upgrade flows — the chrome a user sees first and most often. Deep page content (individual table columns, every button, admin panel) stays in English for now, same scoping boundary used for the earlier currency-conversion work.
+
+### "Refresh shouldn't start over"
+- The active tab (Overview, Markets, Trade, etc.) is now remembered in `localStorage` and restored automatically on refresh, so reloading the page (or coming back later, as long as you're still logged in) drops you back where you left off instead of resetting to Overview. The initial render always starts at "Overview" (matching what the server renders) and the saved tab is adopted a moment later in a client-only effect, so this doesn't cause a React hydration mismatch.
+
+### Demo-account gating
+- Demo/guest users can still **browse everything freely** — dashboards, markets, charts, bot/plan/copy-trader catalogs are all unrestricted, same as before.
+- The moment a demo user tries to **do** something that would normally create data (quick/market trade, limit/stop/margin order, deposit, withdrawal, or subscribing to a bot/copy-trader/plan), a **"Create a free account to continue"** modal appears instead, with **Sign up free**, **Sign in**, and **Keep exploring** options. This is enforced both client-side (immediate modal, friendly UX) and **server-side** (`src/lib/accounts.ts` → `blockedActionMessage`, so it can't be bypassed by calling the API directly).
+- The same modal also appears automatically after a demo user has been browsing for about **2 minutes**, as a proactive nudge — even if they never attempt a mutating action.
 
 ## 5. Testing it yourself
 
-1. Register a new account — fill in the full two-section form, including a security question/answer and a profile photo. Confirm you land in the app logged in.
-2. Log out, then log back in using the **username** you chose instead of the email.
-3. Click "Forgot password," enter your username, answer your security question, and set a new password. Try a wrong answer first to confirm it's rejected, then the right answer to confirm the reset works and you can log in with the new password.
-4. Open your Profile page: edit a few fields (city, gender, address), change your display currency to something other than USD, and save. Confirm balances/prices across the app (Overview, Markets, Trade) now show in that currency, with the FX rate applied consistently.
-5. From the Trade page, note the Amount input still shows USD but now shows a small "≈ [your currency]" hint underneath when your currency isn't USD.
-6. Change your password from the Profile page (current + new + confirm), log out, and confirm the new password works and the old one doesn't.
-7. As an admin, open **Manage users → [any user]** and confirm their username, phone, country, and display currency show up read-only.
-8. Log in as an existing/seeded account created before this update — confirm it still logs in fine and its profile page shows the new fields as blank/"Not set," editable going forward.
+1. **Language:** Click the globe icon in the topbar, pick a non-English language, and confirm the sidebar, topbar, and page headings translate within a few seconds. Refresh the page — the choice should stick. If you're logged in (not demo), go to Profile → Display language and confirm it shows the same selection, and that switching it there updates the topbar too.
+2. **Tab persistence:** Navigate to any tab other than Overview (e.g. Markets), refresh the browser, and confirm you land back on Markets instead of Overview.
+3. **Demo gating (action attempt):** Open the app without logging in (you're a demo user by default), go to Deposit, fill in an amount, and submit — confirm the "Create a free account to continue" modal appears instead of the deposit going through. Try the same from Trade, Withdraw, Trading Bot, Copy Trading, and Plans.
+4. **Demo gating (time-based):** Stay on the app as a demo user without clicking anything mutating for about 2 minutes — confirm the same modal pops up on its own.
+5. **Demo browsing unaffected:** As a demo user, confirm you can still freely view Markets, Trading Bot/Copy Trading/Plans catalogs, your (seeded) Overview dashboard, etc. without being interrupted.
+6. Confirm a **real** (non-demo) account is never shown the demo-gate modal and can trade/deposit/withdraw/subscribe normally.
 
 No real money, card data, or payment processor is involved anywhere in this app — it remains a paper-trading simulation, as before.

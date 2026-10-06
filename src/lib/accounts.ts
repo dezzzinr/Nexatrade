@@ -18,6 +18,7 @@ type StatusFields = {
   accountStatus: string;
   maxTradeAmount: string | number | null;
   withdrawalsBlocked: boolean;
+  isDemo?: boolean;
 };
 
 // Call before any mutating action (trade, deposit, withdrawal, subscribe,
@@ -25,6 +26,13 @@ type StatusFields = {
 // null if the action is allowed. `kind` lets "limited" accounts selectively
 // block only withdrawals while still allowing everything else.
 export function blockedActionMessage(user: StatusFields, kind: "trade" | "deposit" | "withdraw" | "subscribe" | "configure"): string | null {
+  // Demo/guest accounts can look around freely, but any action that would
+  // actually move money or create a lasting record requires a real account
+  // - enforced here (server-side) in addition to the UI prompting sign-up
+  // before even attempting the request.
+  if (user.isDemo) {
+    return "Create a free account to continue - sign up (it's free) to save your trades, deposits, and subscriptions for good.";
+  }
   const status = user.accountStatus ?? "active";
   if (status === "locked" || status === "suspended") {
     return "Your account is suspended. Contact support for help.";
@@ -34,6 +42,7 @@ export function blockedActionMessage(user: StatusFields, kind: "trade" | "deposi
   }
   return null;
 }
+
 
 // Specifically for the "trade" action, where the limit is a dollar amount
 // rather than an outright block. Returns a friendly error, or null if the

@@ -68,6 +68,7 @@ export async function GET(request: NextRequest) {
         statusReason: user.statusReason,
         profilePhoto: user.profilePhoto,
         currency: user.currency ?? "USD",
+        language: user.language ?? "en",
       },
       holdings: h,
       trades: t,

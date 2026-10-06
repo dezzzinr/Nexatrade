@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, AlertTriangle, ArrowDownLeft, ArrowDownRight, ArrowLeftRight, ArrowRight, ArrowUpRight, Bell, Bot, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Copy, CreditCard, Eye, EyeOff, FileText, Hourglass, History, LayoutDashboard, LockKeyhole, LogOut, Menu, MoreHorizontal, Paperclip, Plus, RefreshCw, Search, Settings2, ShieldCheck, Signal, SlidersHorizontal, Sparkles, Trash2, TrendingDown, TrendingUp, UploadCloud, UserRound, UsersRound, Wallet, WandSparkles, X, XCircle, Zap } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDownLeft, ArrowDownRight, ArrowLeftRight, ArrowRight, ArrowUpRight, Bell, Bot, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Copy, CreditCard, Eye, EyeOff, FileText, Globe, Hourglass, History, LayoutDashboard, LockKeyhole, LogOut, Menu, MoreHorizontal, Paperclip, Plus, RefreshCw, Search, Settings2, ShieldCheck, Signal, SlidersHorizontal, Sparkles, Trash2, TrendingDown, TrendingUp, UploadCloud, UserRound, UsersRound, Wallet, WandSparkles, X, XCircle, Zap } from "lucide-react";
 import { assets as catalogAssets, getAsset as getCatalogAsset, type Asset, type Candle, type ChartPoint, type ChartPeriod, type MarketSnapshot } from "@/lib/market";
 import { formatMoney, formatMarketPrice, formatCompactMoney } from "@/lib/currency";
 import { DEPOSIT_METHODS, MAX_RECEIPT_BYTES, type DepositMethod } from "@/lib/deposits";
@@ -12,13 +12,17 @@ import CandlestickChart from "@/components/candlestick-chart";
 import RegisterModal from "@/components/register-modal";
 import ForgotPasswordModal from "@/components/forgot-password-modal";
 import ProfilePage from "@/components/profile-page";
+import { LanguageProvider, useLanguage, readStoredLanguage } from "@/components/i18n-provider";
+import { LANGUAGES, isLanguageCode, type LanguageCode } from "@/lib/i18n";
 
 type Page = "Overview" | "Portfolio" | "Trade" | "Trading Bot" | "Markets" | "Plans" | "Copy Trading" | "Deposit" | "Withdraw" | "Trading Signals" | "Transactions" | "Trade History" | "Profile";
+const PAGE_VALUES: Page[] = ["Overview", "Portfolio", "Trade", "Trading Bot", "Markets", "Plans", "Copy Trading", "Deposit", "Withdraw", "Trading Signals", "Transactions", "Trade History", "Profile"];
+const LAST_PAGE_KEY = "nexa_last_page";
 type DepositAccount = { id: string; method: string; label: string; instructions: string };
 type DepositRequest = { id: string; method: string; amount: string; destinationLabel: string | null; reference: string | null; note: string | null; status: string; adminNote: string | null; receiptFilename: string; createdAt: string; reviewedAt: string | null };
 type WithdrawalRequest = { id: string; method: string; methodLabel: string | null; amount: string; destination: string; note: string | null; status: string; adminNote: string | null; createdAt: string; reviewedAt: string | null };
 type Notification = { id: string; title: string; message: string; readAt: string | null; createdAt: string };
-type AppData = { user: { id: string; name: string; email: string | null; username?: string | null; isDemo: boolean; role: string; cashBalance: number; accountStatus: string; maxTradeAmount: number | null; withdrawalsBlocked: boolean; statusReason: string | null; profilePhoto?: string | null; currency?: string }; holdings: { id: string; symbol: string; quantity: string; avgPrice: string }[]; trades: { id: string; symbol: string; side: string; quantity: string; price: string; total: string; createdAt: string; placedBy: string | null; adminNote: string | null }[]; transactions: { id: string; type: string; amount: string; description: string; createdAt: string }[]; plan: string | null; planExpiresAt: string | null; notifications: Notification[]; unreadNotifications: number; fx?: { currency: string; rate: number; status: string; updatedAt: string | null } };
+type AppData = { user: { id: string; name: string; email: string | null; username?: string | null; isDemo: boolean; role: string; cashBalance: number; accountStatus: string; maxTradeAmount: number | null; withdrawalsBlocked: boolean; statusReason: string | null; profilePhoto?: string | null; currency?: string; language?: string }; holdings: { id: string; symbol: string; quantity: string; avgPrice: string }[]; trades: { id: string; symbol: string; side: string; quantity: string; price: string; total: string; createdAt: string; placedBy: string | null; adminNote: string | null }[]; transactions: { id: string; type: string; amount: string; description: string; createdAt: string }[]; plan: string | null; planExpiresAt: string | null; notifications: Notification[]; unreadNotifications: number; fx?: { currency: string; rate: number; status: string; updatedAt: string | null } };
 type CopyTrader = { id: string; name: string; handle: string; avatarInitials: string; avatarColor: string; focus: string; riskLevel: string; returnPercent: string; winRate: string; subscriptionAmount: string; activeSubscribers: number; mySubscription: { expiresAt: string; amount: string } | null };
 type CopySubscription = { id: string; traderId: string; traderName: string; traderHandle: string; amount: string; startedAt: string; expiresAt: string };
 type TradingBot = { id: string; name: string; description: string; strategy: string; riskLevel: string; minAllocation: string; subscriptionAmount: string; activeSubscribers: number; mySubscription: { expiresAt: string; amount: string } | null };
@@ -58,6 +62,11 @@ function SectionHead({ title, subtitle, action }: { title: string; subtitle?: st
 function EmptyState({ icon: Icon, title, text }: { icon: typeof Bot; title: string; text: string }) { return <div className="empty-state"><span className="empty-icon"><Icon size={27}/></span><h3>{title}</h3><p>{text}</p></div>; }
 
 export default function HomePage() {
+  return <LanguageProvider><HomePageInner /></LanguageProvider>;
+}
+
+function HomePageInner() {
+  const { t, language, setLanguage, translating } = useLanguage();
   const [data, setData] = useState<AppData>(preview);
   // Every balance/price/P&L figure users see is converted to their chosen
   // display currency here; the ledger underneath (data.user.cashBalance,
@@ -69,7 +78,29 @@ export default function HomePage() {
   const money = (value: number, digits = 2) => formatMoney(value, currency, fxRate, digits);
   const marketPrice = (value: number) => formatMarketPrice(value, currency, fxRate);
   const compactMoney = (value: number) => formatCompactMoney(value, currency, fxRate);
+  // Remember which tab the user was on across browser refreshes - previously
+  // every reload silently dumped everyone back to Overview, which felt like
+  // the whole app "started over" even though their data was untouched.
+  // The initial state must stay "Overview" (matching what the server
+  // renders, since localStorage isn't available during SSR) so hydration
+  // doesn't mismatch; the saved tab is adopted a moment later, client-side
+  // only, in the effect below.
   const [page, setPage] = useState<Page>("Overview");
+  useEffect(() => {
+    // Wrapped in an inner function so the setState call below isn't a direct
+    // child of the effect body - functionally identical, just keeps the
+    // stricter React Compiler lint rule happy the same way the rest of this
+    // one-time "adopt a saved preference" pattern does elsewhere in the app.
+    (() => {
+      try {
+        const saved = window.localStorage.getItem(LAST_PAGE_KEY);
+        if (saved && (PAGE_VALUES as string[]).includes(saved)) setPage(saved as Page);
+      } catch { /* ignore quota/availability errors */ }
+    })();
+  }, []);
+  useEffect(() => {
+    try { window.localStorage.setItem(LAST_PAGE_KEY, page); } catch { /* ignore quota/availability errors */ }
+  }, [page]);
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
@@ -84,10 +115,39 @@ export default function HomePage() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
+  const changeLanguage = async (code: LanguageCode) => {
+    setLanguage(code);
+    setLanguageMenuOpen(false);
+    if (!data.user.isDemo) {
+      try {
+        await fetch("/api/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updateProfile", language: code }) });
+      } catch { /* non-critical: the local choice still applies immediately */ }
+    }
+  };
   const [authMode, setAuthMode] = useState<"login" | "register" | null>(null);
   const [authIdentifier, setAuthIdentifier] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  // Demo/guest accounts can look around freely, but any action that would
+  // actually create a lasting record (trade, deposit, withdrawal,
+  // subscription) prompts sign-up instead of silently going through - this
+  // is the client-side half of the gate; src/lib/accounts.ts enforces the
+  // same rule server-side so it can't be bypassed.
+  const [demoGateOpen, setDemoGateOpen] = useState(false);
+  const requireRealAccount = (): boolean => {
+    if (data.user.isDemo) { setDemoGateOpen(true); return false; }
+    return true;
+  };
+  // Time-based nudge: a demo visitor who just browses (never hits one of the
+  // action gates above) still sees the sign-up prompt once after a couple of
+  // minutes, rather than being able to explore in demo mode indefinitely
+  // without ever being invited to create an account.
+  useEffect(() => {
+    if (!ready || !data.user.isDemo) return;
+    const timer = window.setTimeout(() => setDemoGateOpen(true), 2 * 60 * 1000);
+    return () => window.clearTimeout(timer);
+  }, [ready, data.user.isDemo]);
   const [symbol, setSymbol] = useState("BTC");
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [tradeAmount, setTradeAmount] = useState("");
@@ -166,6 +226,17 @@ export default function HomePage() {
     } catch { notify("Could not connect to your workspace. Please refresh.", true); }
   };
   useEffect(() => { void refresh(); }, []);
+  // A signed-in user's saved language preference (set from their Profile
+  // page or this selector on another device) is adopted once, but only if
+  // this browser doesn't already have its own explicit local choice -
+  // language is never auto-detected, only ever remembered from a past
+  // manual pick (here or on the profile page).
+  useEffect(() => {
+    if (data.user.language && isLanguageCode(data.user.language) && !readStoredLanguage()) {
+      setLanguage(data.user.language as LanguageCode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.user.language]);
   const refreshMarket = async () => {
     setMarketRefreshing(true);
     try {
@@ -242,6 +313,7 @@ export default function HomePage() {
   };
   const submitDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!requireRealAccount()) return;
     if (depositSubmitting) return;
     if (methodAccounts.length && !depositAccountId) return notify("Select a destination account.", true);
     if (!receiptFile) return notify("Attach a receipt or screenshot of your payment.", true);
@@ -297,6 +369,7 @@ export default function HomePage() {
   const date = useMemo(() => new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date()), []);
   const placeSpotOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!requireRealAccount()) return;
     if (orderType === "market") {
       if (!quoteLive || currentAsset.price <= 0) return notify("Live quotes are unavailable. Paper trading is paused.", true);
       const usd = Number(tradeAmount);
@@ -338,6 +411,7 @@ export default function HomePage() {
   };
   const openPosition = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!requireRealAccount()) return;
     if (!quoteLive) return notify("Live quotes are unavailable. Paper trading is paused.", true);
     const margin = Number(marginAmount);
     if (!margin || margin < MIN_MARGIN) return notify(`Enter a margin amount of at least $${MIN_MARGIN}.`, true);
@@ -352,7 +426,7 @@ export default function HomePage() {
       await Promise.all([loadMyPositions(), refresh()]);
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setOpeningPosition(false); }
   };
-  const quickTrade = async (e: React.FormEvent) => { e.preventDefault(); if (!quoteLive || currentAsset.price <= 0) return notify("Live quotes are unavailable. Paper trading is paused.", true); const usd = Number(tradeAmount); if (!usd || usd <= 0) return notify("Enter a valid USD amount", true); const quantity = Math.floor((usd / currentAsset.price) * 1e8) / 1e8; if (!quantity) return notify("Amount is too small for this asset", true); const ok = await action({ action: "trade", symbol, side, quantity }); if (ok) { setTradeAmount(""); void refreshMarket(); } };
+  const quickTrade = async (e: React.FormEvent) => { e.preventDefault(); if (!requireRealAccount()) return; if (!quoteLive || currentAsset.price <= 0) return notify("Live quotes are unavailable. Paper trading is paused.", true); const usd = Number(tradeAmount); if (!usd || usd <= 0) return notify("Enter a valid USD amount", true); const quantity = Math.floor((usd / currentAsset.price) * 1e8) / 1e8; if (!quantity) return notify("Amount is too small for this asset", true); const ok = await action({ action: "trade", symbol, side, quantity }); if (ok) { setTradeAmount(""); void refreshMarket(); } };
   const closePosition = async (id: string) => {
     if (closingPositionId) return;
     setClosingPositionId(id);
@@ -370,6 +444,7 @@ export default function HomePage() {
   const loadMySubscriptions = async () => { try { const res = await fetch("/api/copy-subscriptions", { cache: "no-store" }); if (!res.ok) return; const result = await res.json(); if (Array.isArray(result.subscriptions)) setMySubscriptions(result.subscriptions); } catch { /* ignore */ } };
   useEffect(() => { if (ready && page === "Copy Trading") { void loadCopyTraders(); void loadMySubscriptions(); } }, [ready, page]);
   const subscribeToTrader = async (trader: CopyTrader) => {
+    if (!requireRealAccount()) return;
     if (subscribingId) return;
     setSubscribingId(trader.id);
     try {
@@ -386,6 +461,7 @@ export default function HomePage() {
   const loadBotInstances = async () => { try { const res = await fetch("/api/bot-instances", { cache: "no-store" }); if (!res.ok) return; const result = await res.json(); if (Array.isArray(result.instances)) setBotInstances(result.instances); } catch { /* ignore */ } };
   useEffect(() => { if (ready && page === "Trading Bot") { void loadTradingBots(); void loadBotSubHistory(); void loadBotInstances(); } }, [ready, page]);
   const subscribeToBot = async (bot: TradingBot) => {
+    if (!requireRealAccount()) return;
     if (botSubscribingId) return;
     setBotSubscribingId(bot.id);
     try {
@@ -441,6 +517,7 @@ export default function HomePage() {
   const loadPlanSubHistory = async () => { try { const res = await fetch("/api/plan-subscriptions", { cache: "no-store" }); if (!res.ok) return; const result = await res.json(); if (Array.isArray(result.subscriptions)) setPlanSubHistory(result.subscriptions); } catch { /* ignore */ } };
   useEffect(() => { if (ready && page === "Plans") { void loadPlans(); void loadPlanSubHistory(); } }, [ready, page]);
   const subscribeToPlan = async (plan: Plan) => {
+    if (!requireRealAccount()) return;
     if (planSubscribingId) return;
     setPlanSubscribingId(plan.id);
     try {
@@ -453,6 +530,7 @@ export default function HomePage() {
   };
   const submitWithdrawal = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!requireRealAccount()) return;
     if (withdrawalSubmitting) return;
     const amount = Number(withdrawalAmount);
     if (!amount || amount <= 0) return notify("Enter a valid withdrawal amount.", true);
@@ -581,8 +659,8 @@ export default function HomePage() {
 
   return <div className="app-shell">
     {mobileMenu && <div className="mobile-overlay" onClick={() => setMobileMenu(false)}/>}
-    <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}><div className="brand" onClick={() => go("Overview")}><div className="brand-icon"><Activity size={23} strokeWidth={3}/></div><span>Nexa<span>Trade</span></span><button className="mobile-close" onClick={(e) => { e.stopPropagation(); setMobileMenu(false); }}><X size={19}/></button></div><div className="sidebar-body">{navGroups.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(item => { const Icon = item.icon; return <button key={item.name} className={`nav-item ${page === item.name ? "selected" : ""}`} onClick={() => go(item.name)}><Icon size={19} strokeWidth={page === item.name ? 2.25 : 1.8}/><span>{item.name}</span>{item.name === "Trading Signals" && <span className="nav-new">NEW</span>}</button>; })}</div>)}</div><div className="sidebar-bottom"><div className="help-card"><span className="help-bubble"><CircleHelp size={18}/></span><strong>Need a hand?</strong><p>Explore the platform with your free demo account.</p><button onClick={() => { go("Trading Signals"); }}>Explore signals <ArrowRight size={14}/></button></div><div className="sidebar-footer"><ShieldCheck size={15}/> Secure paper trading platform</div></div></aside>
-    <div className="main-shell"><header className="topbar"><div className="topbar-left"><button className="icon-btn menu-btn" onClick={() => setMobileMenu(true)} aria-label="Open menu"><Menu size={22}/></button><div className="breadcrumb">Workspace <ChevronRight size={15}/> <strong>{page}</strong></div></div><div className="topbar-right"><div className={`market-status ${market.status}`} title={market.updatedAt ? `CoinGecko quote updated ${new Date(market.updatedAt).toLocaleString()}` : "CoinGecko market data"} aria-live="polite"><i/><span className="market-status-label">{market.status === "live" ? `Live · ${asOf}` : market.status === "loading" ? "Loading markets" : market.status === "stale" ? "Stale quotes" : "Prices offline"}</span><button className="market-refresh" title="Refresh prices and chart" aria-label="Refresh prices and chart" onClick={() => { void refreshMarket(); setChartRefresh(n => n + 1); }}><RefreshCw size={13} className={marketRefreshing ? "spin" : ""}/></button></div><div className="top-search"><Search size={18}/><input placeholder="Search markets..." value={search} onChange={e => { setSearch(e.target.value); if (e.target.value) setPage("Markets"); }} onFocus={() => {}}/><span>⌘ K</span></div><span className="topbar-divider"/><div className="notification-wrap"><button className="icon-btn notif-btn" aria-label="Notifications" onClick={toggleNotifications}><Bell size={20}/>{data.unreadNotifications > 0 && <i/>}</button>{notificationsOpen && <div className="popover notification-popover"><div className="popover-title">Notifications {data.unreadNotifications > 0 && <span>{data.unreadNotifications} new</span>}</div>{data.notifications.length === 0 ? <div className="notification-empty"><Bell size={18}/><p>No notifications yet</p></div> : data.notifications.map(n => <div className={`notification-item ${n.readAt ? "" : "unread"}`} key={n.id}><span className="notification-icon purple"><Sparkles size={16}/></span><div><strong>{n.title}</strong><p>{n.message}</p><small>{timeAgo(n.createdAt)}</small></div></div>)}</div>}</div><div className="profile-wrap"><button className="profile-button" onClick={() => { setProfileOpen(!profileOpen); setNotificationsOpen(false); }}><span className="avatar">{data.user.profilePhoto ? <img src={data.user.profilePhoto} alt="" style={{width:"100%",height:"100%",borderRadius:"50%",objectFit:"cover"}}/> : data.user.name.split(" ").map(n => n[0]).slice(0, 2).join("")}</span><span className="profile-meta"><strong>{data.user.name}</strong><small>{data.user.isDemo ? "Demo account" : (data.plan ? data.plan + " member" : "No active plan")}</small></span><ChevronDown size={16}/></button>{profileOpen && <div className="popover profile-popover"><div className="profile-pop-head"><strong>{data.user.name}</strong><span>{data.user.email ?? "Exploring in demo mode"}</span></div>{data.user.role === "admin" && <a href="/admin" className="admin-link-btn"><ShieldCheck size={17}/> Admin panel</a>}{!data.user.isDemo && <button onClick={() => { setPage("Profile"); setProfileOpen(false); }}><UserRound size={17}/> View profile</button>}{data.user.isDemo ? <><button onClick={() => { setAuthMode("register"); setProfileOpen(false); }}><UserRound size={17}/> Create an account</button><button onClick={() => { setAuthMode("login"); setProfileOpen(false); }}><LockKeyhole size={17}/> Sign in</button></> : <button onClick={logout}><LogOut size={17}/> Log out</button>}</div>}</div></div></header>
+    <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}><div className="brand" onClick={() => go("Overview")}><div className="brand-icon"><Activity size={23} strokeWidth={3}/></div><span>Nexa<span>Trade</span></span><button className="mobile-close" onClick={(e) => { e.stopPropagation(); setMobileMenu(false); }}><X size={19}/></button></div><div className="sidebar-body">{navGroups.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{t(group.label)}</div>{group.items.map(item => { const Icon = item.icon; return <button key={item.name} className={`nav-item ${page === item.name ? "selected" : ""}`} onClick={() => go(item.name)}><Icon size={19} strokeWidth={page === item.name ? 2.25 : 1.8}/><span>{t(item.name)}</span>{item.name === "Trading Signals" && <span className="nav-new">{t("NEW")}</span>}</button>; })}</div>)}</div><div className="sidebar-bottom"><div className="help-card"><span className="help-bubble"><CircleHelp size={18}/></span><strong>{t("Need a hand?")}</strong><p>{t("Explore the platform with your free demo account.")}</p><button onClick={() => { go("Trading Signals"); }}>{t("Explore signals")} <ArrowRight size={14}/></button></div><div className="sidebar-footer"><ShieldCheck size={15}/> {t("Secure paper trading platform")}</div></div></aside>
+    <div className="main-shell"><header className="topbar"><div className="topbar-left"><button className="icon-btn menu-btn" onClick={() => setMobileMenu(true)} aria-label="Open menu"><Menu size={22}/></button><div className="breadcrumb">{t("Workspace")} <ChevronRight size={15}/> <strong>{t(page)}</strong></div></div><div className="topbar-right"><div className={`market-status ${market.status}`} title={market.updatedAt ? `CoinGecko quote updated ${new Date(market.updatedAt).toLocaleString()}` : "CoinGecko market data"} aria-live="polite"><i/><span className="market-status-label">{market.status === "live" ? `Live · ${asOf}` : market.status === "loading" ? "Loading markets" : market.status === "stale" ? "Stale quotes" : "Prices offline"}</span><button className="market-refresh" title="Refresh prices and chart" aria-label="Refresh prices and chart" onClick={() => { void refreshMarket(); setChartRefresh(n => n + 1); }}><RefreshCw size={13} className={marketRefreshing ? "spin" : ""}/></button></div><div className="top-search"><Search size={18}/><input placeholder={t("Search markets...")} value={search} onChange={e => { setSearch(e.target.value); if (e.target.value) setPage("Markets"); }} onFocus={() => {}}/><span>⌘ K</span></div><span className="topbar-divider"/><div className="notification-wrap"><button className="icon-btn notif-btn" aria-label={t("Language")} title={t("Language")} onClick={() => { setLanguageMenuOpen(!languageMenuOpen); setNotificationsOpen(false); setProfileOpen(false); }}><Globe size={20}/></button>{languageMenuOpen && <div className="popover language-popover"><div className="popover-title">{t("Language")}{translating && <span className="language-translating">…</span>}</div>{LANGUAGES.map(l => <button key={l.code} className={`language-option ${language === l.code ? "selected" : ""}`} onClick={() => changeLanguage(l.code)}><span className="language-flag">{l.flag}</span><span className="language-name">{l.nativeLabel}</span>{language === l.code && <Check size={15}/>}</button>)}</div>}</div><div className="notification-wrap"><button className="icon-btn notif-btn" aria-label="Notifications" onClick={toggleNotifications}><Bell size={20}/>{data.unreadNotifications > 0 && <i/>}</button>{notificationsOpen && <div className="popover notification-popover"><div className="popover-title">{t("Notifications")} {data.unreadNotifications > 0 && <span>{data.unreadNotifications} new</span>}</div>{data.notifications.length === 0 ? <div className="notification-empty"><Bell size={18}/><p>{t("No notifications yet")}</p></div> : data.notifications.map(n => <div className={`notification-item ${n.readAt ? "" : "unread"}`} key={n.id}><span className="notification-icon purple"><Sparkles size={16}/></span><div><strong>{n.title}</strong><p>{n.message}</p><small>{timeAgo(n.createdAt)}</small></div></div>)}</div>}</div><div className="profile-wrap"><button className="profile-button" onClick={() => { setProfileOpen(!profileOpen); setNotificationsOpen(false); }}><span className="avatar">{data.user.profilePhoto ? <img src={data.user.profilePhoto} alt="" style={{width:"100%",height:"100%",borderRadius:"50%",objectFit:"cover"}}/> : data.user.name.split(" ").map(n => n[0]).slice(0, 2).join("")}</span><span className="profile-meta"><strong>{data.user.name}</strong><small>{data.user.isDemo ? t("Demo account") : (data.plan ? data.plan + " " + t("member") : t("No active plan"))}</small></span><ChevronDown size={16}/></button>{profileOpen && <div className="popover profile-popover"><div className="profile-pop-head"><strong>{data.user.name}</strong><span>{data.user.email ?? t("Exploring in demo mode")}</span></div>{data.user.role === "admin" && <a href="/admin" className="admin-link-btn"><ShieldCheck size={17}/> {t("Admin panel")}</a>}{!data.user.isDemo && <button onClick={() => { setPage("Profile"); setProfileOpen(false); }}><UserRound size={17}/> {t("View profile")}</button>}{data.user.isDemo ? <><button onClick={() => { setAuthMode("register"); setProfileOpen(false); }}><UserRound size={17}/> {t("Create an account")}</button><button onClick={() => { setAuthMode("login"); setProfileOpen(false); }}><LockKeyhole size={17}/> {t("Sign in")}</button></> : <button onClick={logout}><LogOut size={17}/> {t("Log out")}</button>}</div>}</div></div></header>
     <main className="content">
       {(market.status === "stale" || market.status === "unavailable") && <div className="market-alert" role="status"><Clock3 size={17}/><span><strong>{market.status === "stale" ? "Market data is stale." : "Market prices are temporarily unavailable."}</strong> {market.status === "stale" ? `Showing last known CoinGecko quotes${asOf ? ` from ${asOf}` : ""}.` : "Check the connection or try again shortly."} Paper trading is paused until live prices return.</span><button onClick={() => void refreshMarket()}>Retry</button></div>}
       {data.user.accountStatus !== "active" && <div className={`account-status-banner ${data.user.accountStatus}`} role="status">
@@ -596,7 +674,7 @@ export default function HomePage() {
         </span>
       </div>}
       {page === "Overview" && <>
-        <div className="welcome-row"><div><div className="eyebrow">{date.toUpperCase()}</div><h1>Good to see you, {firstName} <span className="wave">✌️</span></h1><p>Here's what's happening with your portfolio today.</p></div><div className="welcome-actions"><span className="demo-badge"><span/> {data.user.isDemo ? "Demo account" : "Paper trading"}</span><button className="outline-btn" onClick={() => go("Deposit")}><Plus size={17}/> Add funds</button></div></div>
+        <div className="welcome-row"><div><div className="eyebrow">{date.toUpperCase()}</div><h1>{t("Good to see you,")} {firstName} <span className="wave">✌️</span></h1><p>{t("Here's what's happening with your portfolio today.")}</p></div><div className="welcome-actions"><span className="demo-badge"><span/> {data.user.isDemo ? t("Demo account") : t("Paper trading")}</span><button className="outline-btn" onClick={() => go("Deposit")}><Plus size={17}/> {t("Add funds")}</button></div></div>
         <div className="stats-grid">
           {card(Wallet, "Total balance", money(totalBalance), <span>Cash and invested assets</span>, "blue")}
           {card(Activity, "Portfolio value", money(portfolioValue), <span>{data.holdings.length} assets held</span>, "purple")}
@@ -622,7 +700,7 @@ export default function HomePage() {
         <section className="panel recent-panel"><SectionHead title="Recent activity" subtitle="Your latest trades and transactions" action={<button className="text-link" onClick={() => go("Trade History")}>View history <ArrowRight size={16}/></button>}/>{tradeTable(3)}</section>
       </>}
       {page === "Portfolio" && <>
-        <PageTitle title="My portfolio" description="Your holdings valued against current market prices."><button className="outline-btn" onClick={() => go("Trade")}><Plus size={17}/> New trade</button></PageTitle>
+        <PageTitle title={t("My portfolio")} description={t("Your holdings valued against current market prices.")}><button className="outline-btn" onClick={() => go("Trade")}><Plus size={17}/> New trade</button></PageTitle>
         <div className="stats-grid three">
           {card(Wallet, "Total portfolio", money(totalBalance), <span>Cash + invested assets</span>)}
           {card(TrendingUp, "Invested value", money(portfolioValue), <span>{data.holdings.length} assets held</span>, "purple")}
@@ -638,7 +716,7 @@ export default function HomePage() {
         </div>
       </>}
       {page === "Trade" && <>
-        <PageTitle title="Trade crypto" description="Live candlestick charts, full order types, and leveraged positions — no fees, no slippage."/>
+        <PageTitle title={t("Trade crypto")} description={t("Live candlestick charts, full order types, and leveraged positions — no fees, no slippage.")}/>
         <div className="trade-layout">
           <section className="panel trade-asset-panel">
             <div className="trade-asset-head"><div className="coin-cell"><AssetIcon asset={currentAsset} size={48}/><div><h2>{currentAsset.name} <span>{symbol}</span></h2><p>Market data by CoinGecko · paper trading</p></div></div><span className={`market-open ${quoteLive ? "" : "offline"}`}><span/>{quoteLive ? "Live quote" : "Trading paused"}</span></div>
@@ -657,12 +735,12 @@ export default function HomePage() {
         {tradeMode === "Spot" ? openOrdersPanel() : openPositionsPanel()}
       </>}
       {page === "Markets" && <>
-        <PageTitle title="Explore markets" description="Discover assets and find your next opportunity using CoinGecko market data."><button className="outline-btn" onClick={() => { setSearch(""); setMarketTab("All assets"); }}><SlidersHorizontal size={17}/> Reset filters</button></PageTitle>
+        <PageTitle title={t("Explore markets")} description={t("Discover assets and find your next opportunity using CoinGecko market data.")}><button className="outline-btn" onClick={() => { setSearch(""); setMarketTab("All assets"); }}><SlidersHorizontal size={17}/> Reset filters</button></PageTitle>
         <div className="market-highlights">{assets.slice(0, 3).map(a => <button className="highlight-card" key={a.symbol} onClick={() => { setSymbol(a.symbol); go("Trade"); }}><div className="highlight-top"><div className="coin-cell"><AssetIcon asset={a} size={37}/><div><strong>{a.name}</strong><span>{a.symbol}</span></div></div><ArrowUpRight size={17}/></div><div className="highlight-bottom"><div><strong>{marketPrice(a.price)}</strong>{a.price > 0 ? <span className={a.change >= 0 ? "positive-text" : "negative-text"}>{a.change >= 0 ? "+" : ""}{a.change.toFixed(2)}% today</span> : <span className="price-placeholder">Waiting for quotes</span>}</div><Sparkline values={a.chart} positive={a.change7d >= 0} width={112} height={44}/></div></button>)}</div>
         <section className="panel"><div className="section-head market-section-head"><div><h2>All cryptocurrencies</h2><p>{market.status === "live" ? `Live prices · updated ${asOf}` : market.status === "loading" ? "Loading prices from CoinGecko…" : "Last known prices · trading paused"}</p></div><div className="market-controls"><div className="market-search"><Search size={17}/><input placeholder="Search assets" value={search} onChange={e => setSearch(e.target.value)}/></div><div className="segmented">{["All assets", "Gainers", "Losers"].map(t => <button key={t} className={marketTab === t ? "active" : ""} onClick={() => setMarketTab(t)}>{t}</button>)}</div></div></div>{marketTable(filteredAssets, true)}<p className="market-data-note"><Activity size={13}/> Aggregated market data by CoinGecko. Prices are indicative; trades remain simulated.</p></section>
       </>}
       {page === "Trading Bot" && <>
-        <PageTitle title="Trading bots" description="Subscribe to an admin-managed bot strategy for 7 days, then configure it to trade."><span className="demo-badge"><span/> Simulation mode</span></PageTitle>
+        <PageTitle title={t("Trading bots")} description={t("Subscribe to an admin-managed bot strategy for 7 days, then configure it to trade.")}><span className="demo-badge"><span/> Simulation mode</span></PageTitle>
         <div className="feature-banner bot-banner"><div className="feature-icon"><Bot size={26}/></div><div><span className="banner-eyebrow">TRADE SMARTER, NOT HARDER</span><h2>Put your strategy on autopilot.</h2><p>Browse admin-curated bot strategies, subscribe for 7 days, then configure any number of instances to trade with.</p></div><div className="banner-art"><Bot size={100} strokeWidth={1}/></div></div>
         <div className="section-title-row"><div><h2>Available bots</h2><p>Each subscription runs for exactly 7 days from the moment you subscribe</p></div><span className="subtle-label">{tradingBots.filter(b=>b.mySubscription).length} active</span></div>
         {!tradingBotsLoaded ? <div className="no-results">Loading bots...</div> : tradingBots.length === 0 ? <EmptyState icon={Bot} title="No bots available yet" text="Check back soon — an admin hasn't added any trading bots yet."/> : <div className="trader-grid">{tradingBots.map(b=>{
@@ -704,7 +782,7 @@ export default function HomePage() {
         })}</tbody></table></div>}
       </>}
       {page === "Copy Trading" && <>
-        <PageTitle title="Copy trading" description="Subscribe to a trader's strategy for 7 days and track your subscription history."/>
+        <PageTitle title={t("Copy trading")} description={t("Subscribe to a trader's strategy for 7 days and track your subscription history.")}/>
         <div className="feature-banner copy-banner"><div className="feature-icon"><UsersRound size={25}/></div><div><span className="banner-eyebrow">LEARN FROM THE BEST</span><h2>Great minds trade alike.</h2><p>Browse admin-curated traders and subscribe to follow their strategy for a 7-day period.</p></div><div className="banner-art"><UsersRound size={105} strokeWidth={1}/></div></div>
         <div className="section-title-row"><div><h2>Available traders</h2><p>Each subscription runs for exactly 7 days from the moment you subscribe</p></div><span className="subtle-label">{copyTraders.filter(t=>t.mySubscription).length} active</span></div>
         {!copyTradersLoaded ? <div className="no-results">Loading traders...</div> : copyTraders.length === 0 ? <EmptyState icon={UsersRound} title="No traders available yet" text="Check back soon — an admin hasn't added any copy traders yet."/> : <div className="trader-grid">{copyTraders.map(t=>{
@@ -732,7 +810,7 @@ export default function HomePage() {
         })}</tbody></table></div>}
       </>}
       {page === "Trading Signals" && <>
-        <PageTitle title="Market signals" description="A clearer look at price momentum and today's trading range. Not financial advice."><span className="demo-badge"><span/> {quoteLive ? `Live · ${asOf}` : "Waiting for market data"}</span></PageTitle>
+        <PageTitle title={t("Market signals")} description={t("A clearer look at price momentum and today's trading range. Not financial advice.")}><span className="demo-badge"><span/> {quoteLive ? `Live · ${asOf}` : "Waiting for market data"}</span></PageTitle>
         <div className="signal-summary"><div><span className="signal-summary-icon"><Signal size={24}/></span><span><strong>Market intelligence, simplified.</strong><small>Momentum observations calculated from current CoinGecko prices and 24-hour ranges, not buy or sell recommendations.</small></span></div><button className="outline-btn" onClick={() => go("Markets")}>Explore markets <ArrowRight size={16}/></button></div>
         {signals.length ? <div className="signal-grid">{signals.map(a => {
           const rangePosition = a.high24h !== null && a.low24h !== null && a.high24h > a.low24h ? Math.max(0, Math.min(100, Math.round((a.price - a.low24h) / (a.high24h - a.low24h) * 100))) : null;
@@ -747,7 +825,7 @@ export default function HomePage() {
         <p className="disclaimer">CoinGecko provides market data, not trading advice. All trades and account balances on NexaTrade are simulated.</p>
       </>}
       {page === "Plans" && <>
-        <PageTitle title="Choose your plan" description="Subscribe weekly to unlock more of the platform. No auto-renewal — resubscribe (or switch) once your week is up."/>
+        <PageTitle title={t("Choose your plan")} description={t("Subscribe weekly to unlock more of the platform. No auto-renewal — resubscribe (or switch) once your week is up.")}/>
         <div className="plans-intro"><span><Sparkles size={19}/></span> Your current plan is <strong>{data.plan ?? "No active plan"}</strong>{data.planExpiresAt && <> · renews by {new Date(data.planExpiresAt).toLocaleDateString()}</>}. Plan charges are simulated and deducted from your demo balance.</div>
         {!plansLoaded ? <div className="no-results">Loading plans...</div> : plansCatalog.length === 0 ? <EmptyState icon={Sparkles} title="No plans available yet" text="Check back soon — an admin hasn't added any plans yet."/> : <div className="plans-grid">{plansCatalog.map(p=>{
           const isCurrent = !!p.mySubscription?.isCurrent;
@@ -773,7 +851,7 @@ export default function HomePage() {
       </>}
       {page === "Profile" && <ProfilePage notify={notify} onRequireAuth={(mode) => setAuthMode(mode)} onProfileUpdated={() => { void refresh(); }}/>}
       {page === "Deposit" && <>
-        <PageTitle title="Add funds" description="Send a payment from outside NexaTrade using one of the methods below, then submit your receipt for admin review."/>
+        <PageTitle title={t("Add funds")} description={t("Send a payment from outside NexaTrade using one of the methods below, then submit your receipt for admin review.")}/>
         <div className="deposit-note-banner"><Hourglass size={17}/><span>Deposits are <strong>not instant</strong>. Send funds to the destination shown, upload proof of payment, and an admin will verify and credit your balance — usually within a few hours.</span></div>
         <div className="deposit-layout">
           <section className="panel deposit-panel">
@@ -821,7 +899,7 @@ export default function HomePage() {
         </div>
       </>}
       {page === "Withdraw" && <>
-        <PageTitle title="Withdraw funds" description="Request a payout to any platform you choose. An admin reviews and sends it before it's final."/>
+        <PageTitle title={t("Withdraw funds")} description={t("Request a payout to any platform you choose. An admin reviews and sends it before it's final.")}/>
         <div className="deposit-note-banner"><Hourglass size={17}/><span>The requested amount is <strong>reserved from your available balance</strong> right away. An admin manually sends your payout, then approves the request here — or rejects it and the amount is returned to your balance.</span></div>
         <div className="deposit-layout">
           <section className="panel deposit-panel">
@@ -858,9 +936,9 @@ export default function HomePage() {
           </section>
         </div>
       </>}
-      {page === "Transactions" && <><PageTitle title="Transactions" description="Keep track of every deposit, withdrawal, and plan charge."><button className="outline-btn" onClick={()=>go("Deposit")}><Plus size={17}/> Add funds</button></PageTitle><div className="stats-grid three">{card(ArrowDownLeft,"Total deposited",money(data.transactions.filter(t=>t.type==="deposit").reduce((s,t)=>s+Number(t.amount),0)),<span>All time</span>, "green")}{card(ArrowUpRight,"Total withdrawn",money(data.transactions.filter(t=>t.type==="withdrawal").reduce((s,t)=>s+Number(t.amount),0)),<span>All time</span>, "orange")}{card(Wallet,"Current cash balance",money(data.user.cashBalance),<span>Available to trade</span>)}</div><section className="panel"><SectionHead title="Transaction history" subtitle="A record of your wallet activity"/>{data.transactions.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Transaction</th><th>Type</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>{data.transactions.map(t=>{const isCredit=t.type==="deposit"||t.type==="admin_credit";return <tr key={t.id}><td><div className="transaction-cell"><span className={`transaction-icon ${t.type}`}>{t.type==="deposit"?<ArrowDownLeft size={19}/>:t.type==="withdrawal"?<ArrowUpRight size={19}/>:t.type==="admin_credit"?<Plus size={19}/>:t.type==="admin_debit"?<MoreHorizontal size={19}/>:<Sparkles size={19}/>}</span><strong>{t.description}</strong></div></td><td className="capitalize">{t.type.replace("_"," ")}</td><td className="muted-cell">{new Date(t.createdAt).toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"})}</td><td className={`table-strong ${isCredit?"positive-text":""}`}>{isCredit?"+":"-"}{money(Number(t.amount))}</td><td><span className="status-pill"><span/>Completed</span></td></tr>;})}</tbody></table></div>:<EmptyState icon={CreditCard} title="No transactions yet" text="Deposits and withdrawals will show up here."/>}</section></>}
+      {page === "Transactions" && <><PageTitle title={t("Transactions")} description={t("Keep track of every deposit, withdrawal, and plan charge.")}><button className="outline-btn" onClick={()=>go("Deposit")}><Plus size={17}/> Add funds</button></PageTitle><div className="stats-grid three">{card(ArrowDownLeft,"Total deposited",money(data.transactions.filter(t=>t.type==="deposit").reduce((s,t)=>s+Number(t.amount),0)),<span>All time</span>, "green")}{card(ArrowUpRight,"Total withdrawn",money(data.transactions.filter(t=>t.type==="withdrawal").reduce((s,t)=>s+Number(t.amount),0)),<span>All time</span>, "orange")}{card(Wallet,"Current cash balance",money(data.user.cashBalance),<span>Available to trade</span>)}</div><section className="panel"><SectionHead title="Transaction history" subtitle="A record of your wallet activity"/>{data.transactions.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Transaction</th><th>Type</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>{data.transactions.map(t=>{const isCredit=t.type==="deposit"||t.type==="admin_credit";return <tr key={t.id}><td><div className="transaction-cell"><span className={`transaction-icon ${t.type}`}>{t.type==="deposit"?<ArrowDownLeft size={19}/>:t.type==="withdrawal"?<ArrowUpRight size={19}/>:t.type==="admin_credit"?<Plus size={19}/>:t.type==="admin_debit"?<MoreHorizontal size={19}/>:<Sparkles size={19}/>}</span><strong>{t.description}</strong></div></td><td className="capitalize">{t.type.replace("_"," ")}</td><td className="muted-cell">{new Date(t.createdAt).toLocaleString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"})}</td><td className={`table-strong ${isCredit?"positive-text":""}`}>{isCredit?"+":"-"}{money(Number(t.amount))}</td><td><span className="status-pill"><span/>Completed</span></td></tr>;})}</tbody></table></div>:<EmptyState icon={CreditCard} title="No transactions yet" text="Deposits and withdrawals will show up here."/>}</section></>}
       {page === "Trade History" && <>
-        <PageTitle title="Trade history" description="Review every spot trade, order, and leveraged position in your paper-trading account."><button className="outline-btn" onClick={()=>go("Trade")}><Plus size={17}/> New trade</button></PageTitle>
+        <PageTitle title={t("Trade history")} description={t("Review every spot trade, order, and leveraged position in your paper-trading account.")}><button className="outline-btn" onClick={()=>go("Trade")}><Plus size={17}/> New trade</button></PageTitle>
         <div className="segmented" style={{ marginBottom: 18 }}>{(["Trades", "Orders", "Positions"] as const).map(s => <button key={s} className={historySection === s ? "active" : ""} onClick={() => setHistorySection(s)}>{s}</button>)}</div>
         {historySection === "Trades" && <>
           <div className="stats-grid three">{card(ArrowLeftRight,"Total trades",String(data.trades.length),<span>Completed orders</span>)}{card(ArrowDownLeft,"Buy orders",String(data.trades.filter(t=>t.side==="buy").length),<span>Assets purchased</span>,"green")}{card(ArrowUpRight,"Sell orders",String(data.trades.filter(t=>t.side==="sell").length),<span>Assets sold</span>,"orange")}</div>
@@ -902,8 +980,9 @@ export default function HomePage() {
       <footer className="main-footer"><span>© 2026 NexaTrade. Built for curious traders.</span><span><ShieldCheck size={14}/> Simulation only · Not financial advice</span></footer>
     </main></div>
     {toast && <div className={`toast ${toast.error ? "error":""}`}><span>{toast.error ? <X size={17}/>:<Check size={17}/>}</span>{toast.text}<button onClick={()=>setToast(null)}><X size={15}/></button></div>}
-    {authMode==="login" && <div className="modal-overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setAuthMode(null);}}><div className="auth-modal"><button className="modal-close" onClick={()=>setAuthMode(null)} aria-label="Close"><X size={20}/></button><div className="modal-brand"><div className="brand-icon"><Activity size={23} strokeWidth={3}/></div>Nexa<span>Trade</span></div><h2>Welcome back</h2><p>Sign in to pick up right where you left off.</p><form onSubmit={authenticate}><label className="input-label">Email or username</label><input className="text-input" placeholder="you@example.com or username" value={authIdentifier} onChange={e=>setAuthIdentifier(e.target.value)} required/><label className="input-label">Password</label><input className="text-input" type="password" placeholder="At least 8 characters" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} required/><div className="modal-forgot"><button type="button" onClick={()=>{setAuthMode(null);setForgotPasswordOpen(true);}}>Forgot password?</button></div><button className="primary-btn full-btn" disabled={loading}>{loading?"Please wait...":"Sign in"}<ArrowRight size={17}/></button></form><div className="modal-switch">New to NexaTrade? <button onClick={()=>setAuthMode("register")}>Create account</button></div><div className="modal-security"><LockKeyhole size={14}/> Your account is secured with encrypted credentials</div></div></div>}
+    {authMode==="login" && <div className="modal-overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setAuthMode(null);}}><div className="auth-modal"><button className="modal-close" onClick={()=>setAuthMode(null)} aria-label="Close"><X size={20}/></button><div className="modal-brand"><div className="brand-icon"><Activity size={23} strokeWidth={3}/></div>Nexa<span>Trade</span></div><h2>{t("Welcome back")}</h2><p>{t("Sign in to pick up right where you left off.")}</p><form onSubmit={authenticate}><label className="input-label">{t("Email or username")}</label><input className="text-input" placeholder="you@example.com or username" value={authIdentifier} onChange={e=>setAuthIdentifier(e.target.value)} required/><label className="input-label">{t("Password")}</label><input className="text-input" type="password" placeholder="At least 8 characters" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} required/><div className="modal-forgot"><button type="button" onClick={()=>{setAuthMode(null);setForgotPasswordOpen(true);}}>{t("Forgot password?")}</button></div><button className="primary-btn full-btn" disabled={loading}>{loading?t("Please wait..."):t("Sign in")}<ArrowRight size={17}/></button></form><div className="modal-switch">{t("New to NexaTrade?")} <button onClick={()=>setAuthMode("register")}>{t("Create account")}</button></div><div className="modal-security"><LockKeyhole size={14}/> {t("Your account is secured with encrypted credentials")}</div></div></div>}
     {authMode==="register" && <RegisterModal onClose={()=>setAuthMode(null)} onSwitchToLogin={()=>setAuthMode("login")} onRegistered={handleRegistered}/>}
     {forgotPasswordOpen && <ForgotPasswordModal onClose={()=>setForgotPasswordOpen(false)} onSwitchToLogin={()=>{setForgotPasswordOpen(false);setAuthMode("login");}}/>}
+    {demoGateOpen && <div className="modal-overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setDemoGateOpen(false);}}><div className="demo-gate-modal"><button className="modal-close" onClick={()=>setDemoGateOpen(false)} aria-label="Close"><X size={20}/></button><div className="demo-gate-icon"><UserRound size={24}/></div><h2>{t("Create a free account to continue")}</h2><p>{t("Your demo trades, deposits, and subscriptions won't be saved until you create a free account.")}</p><div className="demo-gate-actions"><button className="primary-btn" onClick={() => { setDemoGateOpen(false); setAuthMode("register"); }}>{t("Sign up free")} <ArrowRight size={16}/></button><button className="outline-btn" onClick={() => { setDemoGateOpen(false); setAuthMode("login"); }}>{t("Sign in")}</button><button className="outline-btn" onClick={() => setDemoGateOpen(false)}>{t("Keep exploring")}</button></div></div></div>}
   </div>;
 }

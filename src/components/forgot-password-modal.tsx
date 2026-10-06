@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ArrowRight, CircleHelp, LockKeyhole, X } from "lucide-react";
+import { useLanguage } from "@/components/i18n-provider";
 
 type Props = {
   onClose: () => void;
@@ -9,6 +10,7 @@ type Props = {
 };
 
 export default function ForgotPasswordModal({ onClose, onSwitchToLogin }: Props) {
+  const { t } = useLanguage();
   const [step, setStep] = useState<"identify" | "answer" | "done">("identify");
   const [identifier, setIdentifier] = useState("");
   const [question, setQuestion] = useState("");
@@ -59,37 +61,37 @@ export default function ForgotPasswordModal({ onClose, onSwitchToLogin }: Props)
     <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="auth-modal">
         <button className="modal-close" onClick={onClose} aria-label="Close"><X size={20} /></button>
-        <div className="modal-brand"><div className="brand-icon"><CircleHelp size={20} strokeWidth={3} /></div>Reset password</div>
+        <div className="modal-brand"><div className="brand-icon"><CircleHelp size={20} strokeWidth={3} /></div>{t("Reset password")}</div>
         {step === "identify" && <>
-          <h2>Forgot your password?</h2>
-          <p>Enter your email or username and we&apos;ll ask your security question.</p>
+          <h2>{t("Forgot your password?")}</h2>
+          <p>{t("Enter your email or username and we'll ask your security question.")}</p>
           <form onSubmit={lookUp}>
-            <label className="input-label">Email or username</label>
+            <label className="input-label">{t("Email or username")}</label>
             <input className="text-input" placeholder="you@example.com or username" value={identifier} onChange={(e) => setIdentifier(e.target.value)} required />
             {error && <p className="form-error-text">{error}</p>}
-            <button className="primary-btn full-btn" disabled={submitting}>{submitting ? "Looking up..." : "Continue"}<ArrowRight size={17} /></button>
+            <button className="primary-btn full-btn" disabled={submitting}>{submitting ? t("Looking up...") : t("Continue")}<ArrowRight size={17} /></button>
           </form>
         </>}
         {step === "answer" && <>
-          <h2>Answer your security question</h2>
+          <h2>{t("Answer your security question")}</h2>
           <p>{question}</p>
           <form onSubmit={reset}>
-            <label className="input-label">Your answer</label>
+            <label className="input-label">{t("Your answer")}</label>
             <input className="text-input" value={answer} onChange={(e) => setAnswer(e.target.value)} required />
-            <label className="input-label">New password</label>
+            <label className="input-label">{t("New password")}</label>
             <input className="text-input" type="password" placeholder="At least 8 characters" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} />
-            <label className="input-label">Confirm new password</label>
+            <label className="input-label">{t("Confirm new password")}</label>
             <input className="text-input" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={8} />
             {error && <p className="form-error-text">{error}</p>}
-            <button className="primary-btn full-btn" disabled={submitting}>{submitting ? "Resetting..." : "Reset password"}<ArrowRight size={17} /></button>
+            <button className="primary-btn full-btn" disabled={submitting}>{submitting ? t("Resetting...") : t("Reset password")}<ArrowRight size={17} /></button>
           </form>
         </>}
         {step === "done" && <>
-          <h2>Password updated</h2>
-          <p>Your password has been reset. You can now sign in with your new password.</p>
-          <button className="primary-btn full-btn" onClick={onSwitchToLogin}>Sign in<ArrowRight size={17} /></button>
+          <h2>{t("Password updated")}</h2>
+          <p>{t("Your password has been reset. You can now sign in with your new password.")}</p>
+          <button className="primary-btn full-btn" onClick={onSwitchToLogin}>{t("Sign in")}<ArrowRight size={17} /></button>
         </>}
-        <div className="modal-security"><LockKeyhole size={14} /> Your account is secured with encrypted credentials</div>
+        <div className="modal-security"><LockKeyhole size={14} /> {t("Your account is secured with encrypted credentials")}</div>
       </div>
     </div>
   );

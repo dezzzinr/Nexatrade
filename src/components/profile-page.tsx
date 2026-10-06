@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { BadgeCheck, Check, CircleHelp, KeyRound, Lock, UploadCloud, UserRound } from "lucide-react";
 import { COUNTRIES, currencyForCountry } from "@/lib/countries";
 import { GENDERS, genderLabel } from "@/lib/profile";
+import { LANGUAGES, type LanguageCode } from "@/lib/i18n";
+import { useLanguage } from "@/components/i18n-provider";
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -14,7 +16,7 @@ type Profile = {
   dateOfBirth: string | null; gender: string | null; country: string | null; state: string | null;
   city: string | null; address: string | null; phone: string | null; profilePhoto: string | null;
   referralCode: string | null; hasSecurityQuestion: boolean; securityQuestion: string | null;
-  termsAcceptedAt: string | null; privacyAcceptedAt: string | null; currency: string; createdAt: string;
+  termsAcceptedAt: string | null; privacyAcceptedAt: string | null; currency: string; language?: string; createdAt: string;
 };
 
 type Props = {
@@ -24,8 +26,10 @@ type Props = {
 };
 
 export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }: Props) {
+  const { setLanguage } = useLanguage();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [savingLanguage, setSavingLanguage] = useState(false);
   const [fx, setFx] = useState<{ rate: number; status: string } | null>(null);
 
   const [form, setForm] = useState<Partial<Profile>>({});
@@ -100,6 +104,22 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
       notify(err instanceof Error ? err.message : "Update failed.", true);
     } finally {
       setSavingCurrency(false);
+    }
+  };
+
+  const saveLanguage = async (language: string) => {
+    setSavingLanguage(true);
+    try {
+      const result = await patch({ action: "updateProfile", language });
+      setProfile(result.profile);
+      setForm((f) => ({ ...f, language: result.profile.language }));
+      setLanguage(language as LanguageCode);
+      notify("Display language updated.");
+      onProfileUpdated();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Update failed.", true);
+    } finally {
+      setSavingLanguage(false);
     }
   };
 
@@ -238,6 +258,11 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
           <h3>Display currency</h3><p className="panel-subtitle">Balances, prices, and profit/loss are converted for display using a live exchange rate. Your real ledger always stays in USD.</p>
           <div className="select-wrap"><select data-testid="currency-select" value={form.currency ?? "USD"} disabled={savingCurrency} onChange={(e) => { setForm({ ...form, currency: e.target.value }); void saveCurrency(e.target.value); }}>{CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
           {fx && <p className="form-hint">1 USD ≈ {fx.rate.toLocaleString("en-US", { maximumFractionDigits: 4 })} {profile.currency} {fx.status !== "live" && "(rate may be slightly delayed)"}</p>}
+        </div>
+
+        <div className="panel">
+          <h3>Display language</h3><p className="panel-subtitle">Translates the app&apos;s menus, buttons, and headings. Market data and numbers are unaffected.</p>
+          <div className="select-wrap"><select data-testid="language-select" value={form.language ?? "en"} disabled={savingLanguage} onChange={(e) => { setForm({ ...form, language: e.target.value }); void saveLanguage(e.target.value); }}>{LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.flag} {l.nativeLabel}</option>)}</select></div>
         </div>
 
         <div className="panel">
