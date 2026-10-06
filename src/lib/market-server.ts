@@ -1,4 +1,4 @@
-import { assets as catalog, compactMoney, supportedCoins, type ChartPeriod, type ChartPoint, type MarketSnapshot } from "@/lib/market";
+import { assets as catalog, compactMoney, supportedCoins, type Candle, type ChartPeriod, type ChartPoint, type MarketSnapshot } from "@/lib/market";
 
 const demoKey = process.env.COINGECKO_API_KEY || process.env.COINGECKO_DEMO_API_KEY;
 const proKey = process.env.COINGECKO_PRO_API_KEY;
@@ -114,4 +114,69 @@ export async function getCoinHistory(symbol: string, period: ChartPeriod): Promi
   const sampled = points.filter((_, index) => index % step === 0);
   if (sampled.at(-1)?.timestamp !== points.at(-1)?.timestamp) sampled.push(points[points.length - 1]);
   return sampled;
+}
+
+// True OHLC candles for the candlestick chart, from CoinGecko's dedicated
+// /ohlc endpoint (candle width is chosen automatically by CoinGecko based
+// on the `days` window: ~30min candles for 1 day, ~4h for 7-30 days, ~4
+// days for 1 year). That endpoint doesn't include volume, so it's paired
+// with the /market_chart volume series and each volume point is bucketed
+// into the candle interval it falls within.
+export async function getCoinCandles(symbol: string, period: ChartPeriod): Promise<Candle[]> {
+  const coin = supportedCoins.find((item) => item.symbol === symbol);
+  if (!coin || !daysForPeriod[period]) throw new Error("Unsupported coin or chart period");
+  const query = new URLSearchParams({ vs_currency: "usd", days: String(daysForPeriod[period]) });
+  const [ohlcRaw, volumeRaw] = await Promise.all([
+    coinGecko(`/coins/${coin.id}/ohlc?${query}`, cacheForPeriod[period]),
+    coinGecko(`/coins/${coin.id}/market_chart?${query}`, cacheForPeriod[period]).catch(() => null),
+  ]);
+  if (!Array.isArray(ohlcRaw)) throw new Error("Candle data is unavailable");
+
+  const candles: Candle[] = ohlcRaw.flatMap((entry: unknown): Candle[] => {
+    if (!Array.isArray(entry) || entry.length < 5) return [];
+    const timestamp = safeNumber(entry[0]);
+    const open = safeNumber(entry[1]);
+    const high = safeNumber(entry[2]);
+    const low = safeNumber(entry[3]);
+    const close = safeNumber(entry[4]);
+    if (timestamp === null || open === null || high === null || low === null || close === null) return [];
+    if (open <= 0 || high <= 0 || low <= 0 || close <= 0) return [];
+    return [{ timestamp, open, high, low, close, volume: 0 }];
+  });
+  if (candles.length < 2) throw new Error("Not enough candle data");
+  candles.sort((a, b) => a.timestamp - b.timestamp);
+
+  // CoinGecko's free market_chart volume series is a *trailing 24h rolling*
+  // total sampled at each point, not a per-interval traded amount - so a
+  // candle's approximate traded volume is the increase in that rolling
+  // total between the candle's start and end (floored at 0 to absorb
+  // rolling-window/sampling noise). This is an approximation (the free
+  // tier doesn't expose true per-candle volume), but it tracks relative
+  // trading activity well enough for a volume strip under the chart.
+  const volumePoints = (volumeRaw && typeof volumeRaw === "object" && Array.isArray((volumeRaw as { total_volumes?: unknown }).total_volumes))
+    ? (volumeRaw as { total_volumes: unknown[] }).total_volumes.flatMap((entry): { timestamp: number; volume: number }[] => {
+        if (!Array.isArray(entry) || entry.length < 2) return [];
+        const timestamp = safeNumber(entry[0]);
+        const volume = safeNumber(entry[1]);
+        return timestamp !== null && volume !== null && volume >= 0 ? [{ timestamp, volume }] : [];
+      })
+    : [];
+  if (volumePoints.length > 1) {
+    const nearestVolumeAt = (at: number) => {
+      let best = volumePoints[0];
+      let bestDiff = Math.abs(best.timestamp - at);
+      for (const point of volumePoints) {
+        const diff = Math.abs(point.timestamp - at);
+        if (diff < bestDiff) { best = point; bestDiff = diff; }
+      }
+      return best.volume;
+    };
+    const lastKnownTimestamp = volumePoints[volumePoints.length - 1].timestamp;
+    for (let i = 0; i < candles.length; i++) {
+      const start = candles[i].timestamp;
+      const end = i + 1 < candles.length ? candles[i + 1].timestamp : lastKnownTimestamp;
+      candles[i].volume = Math.max(0, nearestVolumeAt(end) - nearestVolumeAt(start));
+    }
+  }
+  return candles;
 }

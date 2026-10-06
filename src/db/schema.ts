@@ -49,7 +49,65 @@ export const trades = pgTable("trades", {
   // support request); null for trades the user placed themselves.
   placedBy: uuid("placed_by").references(() => users.id, { onDelete: "set null" }),
   adminNote: text("admin_note"), // optional note the admin left when placing the trade
+  // Set when this trade is the fill of a pending limit/stop-loss/take-profit
+  // order; null for trades that executed immediately (market orders, or
+  // trades placed by an admin on the user's behalf).
+  orderId: uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A spot order ticket. Market orders execute immediately and never appear
+// here (they go straight into `trades`). Limit, stop-loss, and take-profit
+// orders start "open" and sit in a book until the live price crosses their
+// trigger, at which point they fill (status "filled", a row is written to
+// `trades`) or the user cancels them (status "cancelled"). There are no
+// trading fees and no simulated slippage: every fill happens at the exact
+// limit/trigger price. Stop-loss and take-profit orders are protective
+// sell orders against an existing holding (spot has no shorting), so their
+// side is always "sell"; limit orders may be buy or sell.
+export const orders = pgTable("orders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  symbol: text("symbol").notNull(),
+  side: text("side").notNull(), // buy | sell
+  type: text("type").notNull(), // limit | stop_loss | take_profit
+  quantity: numeric("quantity", { precision: 24, scale: 8 }).notNull(),
+  // The limit price for "limit" orders, or the trigger level for
+  // "stop_loss"/"take_profit" orders. Fills happen at exactly this price.
+  triggerPrice: numeric("trigger_price", { precision: 24, scale: 8 }).notNull(),
+  status: text("status").notNull().default("open"), // open | filled | cancelled
+  filledPrice: numeric("filled_price", { precision: 24, scale: 8 }),
+  filledAt: timestamp("filled_at", { withTimezone: true }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A leveraged margin position: long or short exposure on a symbol funded by
+// a cash margin deposit multiplied by a leverage factor. Margin is deducted
+// from cashBalance the moment the position opens and is credited back (plus
+// or minus realized P&L) when it closes. There are no fees and no slippage:
+// the position closes at exactly the current price (manual close) or at
+// exactly the take-profit/stop-loss/liquidation trigger price. Realized
+// loss is always floored at -margin, so a user's cash balance can never go
+// negative because of a position.
+export const positions = pgTable("positions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  symbol: text("symbol").notNull(),
+  side: text("side").notNull(), // long | short
+  leverage: numeric("leverage", { precision: 6, scale: 2 }).notNull(),
+  margin: numeric("margin", { precision: 18, scale: 2 }).notNull(), // USD collateral locked from cashBalance
+  quantity: numeric("quantity", { precision: 24, scale: 8 }).notNull(), // position size in asset units = margin*leverage/entryPrice
+  entryPrice: numeric("entry_price", { precision: 24, scale: 8 }).notNull(),
+  liquidationPrice: numeric("liquidation_price", { precision: 24, scale: 8 }).notNull(),
+  takeProfitPrice: numeric("take_profit_price", { precision: 24, scale: 8 }),
+  stopLossPrice: numeric("stop_loss_price", { precision: 24, scale: 8 }),
+  status: text("status").notNull().default("open"), // open | closed | liquidated
+  closePrice: numeric("close_price", { precision: 24, scale: 8 }),
+  closeReason: text("close_reason"), // manual | take_profit | stop_loss | liquidation
+  realizedPnl: numeric("realized_pnl", { precision: 18, scale: 2 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
 });
 
 export const transactions = pgTable("transactions", {

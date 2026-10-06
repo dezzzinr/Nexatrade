@@ -61,7 +61,9 @@ The current market snapshot is available at `/api/market`; chart data at `/api/m
 ## Features
 
 - Registration and login with salted password hashes and HTTP-only database-backed sessions
-- Live market data, coin images, interactive historical charts, and paper-trading dashboard
+- Live market data, coin images, candlestick (OHLC) charts with a volume strip, and a paper-trading dashboard
+- Full order-ticket trading: Market, Limit, Stop-Loss, and Take-Profit orders with an open-orders book and one-click cancellation — no fees, no slippage, exact fills at the quoted/trigger price
+- Margin/leverage trading: isolated-margin long/short positions (2x–100x) with live unrealized P&L, optional take-profit/stop-loss, and automatic liquidation
 - Portfolio valuation, server-verified simulated buy/sell execution, and trade history
 - Manual, admin-reviewed deposits and withdrawals with a transaction ledger (see below)
 - Admin-managed trading bot catalog with paid 7-day subscriptions and user-configured bot instances
@@ -72,6 +74,17 @@ The current market snapshot is available at `/api/market`; chart data at `/api/m
 - Responsive interface using the NexaTrade blue theme, including a fully mobile-responsive admin panel (sidebar on desktop, hamburger menu on mobile — same pattern as the main dashboard)
 
 **Simulation notice:** Market prices are real provider quotes, but there is no live exchange execution, autonomous bot execution, or automatic trade copying — subscribing to a trading bot or copy trader grants access to configure it / view their published stats for 7 days, it does not execute real trades or mirror real trades. Plan subscriptions are a simulated billing flow and do not enable any live exchange connectivity. Deposits and withdrawals model a real-world manual payment flow — see below.
+
+## Trading: candlestick charts, full order types, and leverage
+
+The **Trade** page simulates a real exchange's order ticket instead of a single buy/sell button:
+
+- **Charts.** The old line chart is replaced by a candlestick (OHLC) chart with a volume bar strip underneath, built from `/api/market/candles` (backed by CoinGecko's `market_chart` endpoint). Intervals: 24H, 7D, 30D, 1Y. Hovering shows open/high/low/close/volume for that candle. *Caveat:* CoinGecko's free tier only exposes a trailing 24h rolling volume per sample, not true per-candle volume, so per-candle volume is approximated as the delta between consecutive rolling-total readings (floored at 0) — it tracks relative activity well but isn't exchange-accurate; disclose this if you ever surface volume as a precise figure.
+- **Order types.** Spot orders support **Market** (fills immediately), **Limit** (buy at/under, sell at/over your price), **Stop-Loss** (sell-only, triggers at/under a price), and **Take-Profit** (sell-only, triggers at/over a price). Pending limit/stop/take-profit orders sit in an **open orders** book (visible on the Trade page and under Trade History → Orders) and can be cancelled anytime before they fill. A background sweep (hooked into the `/api/market` and `/api/app` routes, so it runs on normal traffic without a separate cron) checks every open order and position against the latest price and fills/closes/liquidates them automatically.
+- **No fees, no slippage, by design.** Every fill is deterministic: a market order fills at the live quoted price; a limit order fills at the better of your limit and the live price (never worse — exactly like a real exchange, but with zero spread since there's one quoted price); a stop-loss/take-profit fills at exactly its trigger price. There are no trading fees anywhere in the app.
+- **Reservations.** Placing a sell-side limit/stop-loss/take-profit order reserves that quantity of the asset so it can't be double-sold by a market trade or another order while it's pending (and the same for cash reserved by open buy orders). This is enforced server-side in both the order-ticket endpoints and the plain market-trade endpoint.
+- **Margin/leverage.** The **Margin** tab opens isolated-margin long or short positions at 2x–100x leverage. You choose a margin (collateral) amount; position size = margin × leverage ÷ entry price. The ticket shows live notional value and liquidation price before you submit, and optional take-profit/stop-loss trigger prices. Margin is deducted from your cash balance immediately; it's returned (plus/minus P&L) when the position is closed, hits its TP/SL, or is liquidated. Liquidation happens automatically when the price moves against the position by `margin ÷ (quantity)`'s worth (i.e. the position's notional loss would exceed the posted margin) — realized P&L is capped at losing exactly the margin, never more (no negative balance risk). Open positions show live unrealized P&L on the Trade page and under Trade History → Positions; closed/liquidated ones keep their realized P&L and close reason in history.
+- **Admin manual trades remain spot/market only** — the admin "place a trade for this user" tool was intentionally not extended to pending order types or leveraged positions, to keep that feature's blast radius small. The admin panel does not currently surface a user's open orders or leveraged positions; a user's pending orders and positions only affect their own cash/asset balances, which the admin can still see and adjust as usual.
 
 ## Deposits: manual, admin-reviewed (no payment processor)
 

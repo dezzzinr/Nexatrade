@@ -34,3 +34,45 @@
 .status-pill.suspended span{background:#e5525c}
 .status-pill.locked{background:#272c3a;color:#fff}
 .status-pill.locked span{background:#9aa4b7}
+
+/* --- Trading feature overhaul: order types, leverage positions, candlesticks --- */
+.trade-mode-toggle{margin-bottom:18px}
+.order-type-tabs{margin-bottom:4px;flex-wrap:wrap}
+.order-type-tabs button{flex:1}
+.leverage-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+.leverage-row button{flex:1;min-width:46px;height:36px;border:1px solid #e4e8f0;background:#fff;border-radius:8px;color:#5b6880;font-size:12px;font-weight:720}
+.leverage-row button.active{border-color:var(--blue);background:#ededff;color:var(--blue)}
+.position-pnl.positive-text,.position-pnl.negative-text{font-weight:760}
+.liquidation-cell{color:#d6454f;font-weight:700}
+.status-pill.open{background:#eef2ff;color:#3936ee}
+.status-pill.open span{background:#3936ee}
+.status-pill.filled{background:#e9faf2;color:#0daa77}
+.status-pill.filled span{background:#10ba80}
+.status-pill.cancelled{background:#f3f4f8;color:#8b93a6}
+.status-pill.cancelled span{background:#aab2c1}
+.status-pill.closed{background:#e9faf2;color:#0daa77}
+.status-pill.closed span{background:#10ba80}
+.status-pill.liquidated{background:#fdeeee;color:#d6454f}
+.status-pill.liquidated span{background:#e5525c}
+.margin-risk-note{display:flex;align-items:flex-start;gap:6px;color:#9d6d24;background:#fff9ed;border:1px solid #f6e8c9;border-radius:8px;padding:9px 11px;font-size:10.5px;line-height:1.55;margin-top:10px}
+.margin-risk-note svg{flex-shrink:0;margin-top:1px}
+
+/* Candlestick chart, mirrors .live-chart's layout from market-chart.tsx */
+.candle-chart{display:flex;gap:7px;width:100%;padding:0;margin-top:13px;min-width:0}
+.candle-chart-values{width:52px;flex-shrink:0;height:180px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;font-size:10px;color:#9ba6b8;line-height:1}
+.candle-chart-body{min-width:0;flex:1}
+.candle-chart-plot{position:relative;height:180px;cursor:crosshair}
+.candle-chart-grid{position:absolute;inset:0;display:flex;justify-content:space-between;flex-direction:column;pointer-events:none}
+.candle-chart-grid span{border-top:1px dashed #eef0f5;display:block;width:100%}
+.candle-chart-svg{position:relative;z-index:1;width:100%;height:100%;overflow:visible;display:block}
+.candle-volume-svg{width:100%;display:block;margin-top:4px}
+.candle-chart-dates{display:flex;justify-content:space-between;color:#a5aebd;font-size:10px;margin-top:8px;white-space:nowrap}
+.candle-chart-guide{position:absolute;top:0;bottom:0;width:1px;border-left:1px dashed #a7a4ee;z-index:2;pointer-events:none}
+.candle-chart-tooltip{position:absolute;top:6px;z-index:3;transform:translateX(-50%);background:#222846;border:1px solid #373d5a;box-shadow:0 8px 20px #1216322b;color:#fff;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:3px;min-width:160px;white-space:nowrap;pointer-events:none;text-align:left;font-size:10.5px}
+.candle-chart-tooltip strong{font-size:13px}
+@media(max-width:600px){
+  .candle-chart{gap:3px}
+  .candle-chart-values{width:38px;font-size:9px}
+  .candle-chart-dates{font-size:9px}
+  .candle-chart-dates span:nth-child(2),.candle-chart-dates span:nth-child(4){display:none}
+}

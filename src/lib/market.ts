@@ -1,5 +1,6 @@
 export type ChartPeriod = "24H" | "7D" | "30D" | "1Y";
 export type ChartPoint = { timestamp: number; price: number };
+export type Candle = { timestamp: number; open: number; high: number; low: number; close: number; volume: number };
 
 export type Asset = {
   id: string;

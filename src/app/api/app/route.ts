@@ -6,6 +6,7 @@ import { getUser, createDemoUser, setSession, clearSession } from "@/lib/auth";
 import { getAsset, marketPrice } from "@/lib/market";
 import { getMarketSnapshot } from "@/lib/market-server";
 import { blockedActionMessage, tradeLimitMessage } from "@/lib/accounts";
+import { executeSpotFill, reservedBuyCash, reservedSellQuantity, sweepForUser } from "@/lib/trading-engine";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -21,6 +22,20 @@ export async function GET(request: NextRequest) {
     }
     let fresh = false;
     if (!user) { user = await createDemoUser(); fresh = true; }
+    if (!fresh) {
+      // Make sure this user's own pending orders/leverage positions are
+      // evaluated against the latest live prices right when their
+      // dashboard loads, so fills/closes feel instant even between the
+      // periodic global sweep (see /api/market) runs.
+      try {
+        const market = await getMarketSnapshot();
+        if (market.status === "live") {
+          const prices: Record<string, number> = {};
+          for (const asset of market.assets) prices[asset.symbol] = asset.price;
+          await sweepForUser(prices, user.id);
+        }
+      } catch (error) { console.error("App GET sweep:", error); }
+    }
     const [h, t, tx, currentPlan, notifRows, unreadCount] = await Promise.all([
       db.select().from(holdings).where(eq(holdings.userId, user.id)),
       db.select().from(trades).where(eq(trades.userId, user.id)).orderBy(desc(trades.createdAt)).limit(50),
@@ -82,25 +97,24 @@ export async function POST(request: NextRequest) {
       const limitMsg = tradeLimitMessage(user, total);
       if (limitMsg) return bad(limitMsg, 403);
       await db.transaction(async (tx) => {
-        const [wallet] = await tx.select().from(users).where(eq(users.id, user.id)).for("update");
-        const [existing] = await tx.select().from(holdings).where(and(eq(holdings.userId, user.id), eq(holdings.symbol, symbol))).for("update");
+        // Respect quantity/cash already committed to the user's other open
+        // limit/stop-loss/take-profit orders, so a market trade can't spend
+        // funds or an asset balance that's reserved for a pending order.
         if (side === "buy") {
-          if (Number(wallet.cashBalance) < total) throw new Error("Insufficient available balance.");
-          await tx.update(users).set({ cashBalance: sql`${users.cashBalance} - ${total}` }).where(eq(users.id, user.id));
-          if (existing) {
-            const oldQty = Number(existing.quantity);
-            const newQty = oldQty + quantity;
-            const avgPrice = ((oldQty * Number(existing.avgPrice)) + quantity * asset.price) / newQty;
-            await tx.update(holdings).set({ quantity: newQty.toFixed(8), avgPrice: avgPrice.toFixed(8) }).where(eq(holdings.id, existing.id));
-          } else await tx.insert(holdings).values({ userId: user.id, symbol, quantity: quantity.toFixed(8), avgPrice: asset.price.toFixed(8) });
+          const [wallet] = await tx.select().from(users).where(eq(users.id, user.id)).for("update");
+          const reserved = await reservedBuyCash(tx, user.id);
+          if (total > Number(wallet.cashBalance) - reserved + 0.0001) {
+            throw new Error(reserved > 0 ? `Insufficient available balance — $${reserved.toFixed(2)} is already committed to open buy orders.` : "Insufficient available balance.");
+          }
         } else {
-          if (!existing || Number(existing.quantity) + 0.000000001 < quantity) throw new Error("Insufficient asset balance.");
-          await tx.update(users).set({ cashBalance: sql`${users.cashBalance} + ${total}` }).where(eq(users.id, user.id));
-          const remaining = Number(existing.quantity) - quantity;
-          if (remaining < 0.00000001) await tx.delete(holdings).where(eq(holdings.id, existing.id));
-          else await tx.update(holdings).set({ quantity: remaining.toFixed(8) }).where(eq(holdings.id, existing.id));
+          const [existing] = await tx.select().from(holdings).where(and(eq(holdings.userId, user.id), eq(holdings.symbol, symbol))).for("update");
+          const reserved = await reservedSellQuantity(tx, user.id, symbol);
+          const available = (existing ? Number(existing.quantity) : 0) - reserved;
+          if (quantity > available + 0.00000001) {
+            throw new Error(reserved > 0 ? `Insufficient available ${symbol} — ${reserved} is already committed to open sell orders.` : "Insufficient asset balance.");
+          }
         }
-        await tx.insert(trades).values({ userId: user.id, symbol, side, quantity: quantity.toFixed(8), price: asset.price.toFixed(8), total: total.toFixed(2) });
+        await executeSpotFill(tx, user.id, symbol, side, quantity, asset.price);
       });
       return NextResponse.json({ success: true, price: asset.price, total, message: `${side === "buy" ? "Bought" : "Sold"} ${quantity} ${symbol} at ${marketPrice(asset.price)}` });
     }
