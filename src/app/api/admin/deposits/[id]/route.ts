@@ -4,6 +4,7 @@ import { depositRequests, users, transactions } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
 import { depositMethodLabel } from "@/lib/deposits";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const adminNote = body.adminNote ? String(body.adminNote).trim().slice(0, 1000) || null : null;
     if (decision === "reject" && !adminNote) return bad("Add a short note explaining why this deposit was rejected.");
 
-    const message = await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [row] = await tx.select().from(depositRequests).where(eq(depositRequests.id, id)).for("update");
       if (!row) throw new Error("Deposit request not found.");
       if (row.status !== "pending") throw new Error("This request has already been reviewed.");
@@ -41,10 +42,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .set({ status: decision === "approve" ? "approved" : "rejected", adminNote, reviewedBy: admin.id, reviewedAt: new Date() })
         .where(eq(depositRequests.id, id));
 
-      return decision === "approve" ? "Deposit approved and credited to the user's balance." : "Deposit request rejected.";
+      return {
+        message: decision === "approve" ? "Deposit approved and credited to the user's balance." : "Deposit request rejected.",
+        userId: row.userId,
+        amount: row.amount,
+        method: row.method,
+      };
     });
 
-    return NextResponse.json({ success: true, message });
+    await notifyUser({
+      userId: result.userId,
+      type: decision === "approve" ? "deposit_approved" : "deposit_rejected",
+      title: decision === "approve" ? "Deposit approved" : "Deposit rejected",
+      message: decision === "approve"
+        ? `Your $${Number(result.amount).toFixed(2)} ${depositMethodLabel(result.method)} deposit was approved and credited to your balance.`
+        : `Your $${Number(result.amount).toFixed(2)} ${depositMethodLabel(result.method)} deposit was rejected.${adminNote ? ` Reason: ${adminNote}` : ""}`,
+    });
+
+    return NextResponse.json({ success: true, message: result.message });
   } catch (error) {
     console.error("Admin deposit review:", error);
     return bad(error instanceof Error ? error.message : "Something went wrong.", 400);

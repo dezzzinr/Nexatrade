@@ -35,6 +35,12 @@ export const users = pgTable("users", {
   // this is never auto-derived from country, only ever set by the user from
   // the language switcher. See src/lib/i18n.ts for the supported list.
   language: text("language").notNull().default("en"),
+  // Whether this user wants notable account/trading events emailed to them
+  // (in addition to always appearing in their in-app notification bell,
+  // which can't be turned off). Defaults on; edited from the Profile page.
+  // Ignored for demo accounts (no email address to send to) and if no
+  // outbound email provider is configured (see src/lib/email-server.ts).
+  emailNotifications: boolean("email_notifications").notNull().default(true),
   // Account standing, set by admins under Admin panel -> Users:
   //   active    - normal account, no restrictions
   //   limited   - can log in and trade, but maxTradeAmount caps a single
@@ -252,16 +258,30 @@ export const planSubscriptions = pgTable("plan_subscriptions", {
 });
 
 
-// Admin-sent notifications to a specific user, shown in their notification
-// bell. Each row is addressed to exactly one user; sentBy records which
-// admin sent it (null if the sending admin account is later deleted).
+// Notifications shown in a user's notification bell - both system-generated
+// (account created, login, trade placed, deposit/withdrawal reviewed, bot/
+// copy/plan subscribed or cancelled, balance adjusted, etc.) and admin-sent
+// manual messages. Each row is addressed to exactly one user; sentBy is set
+// only for manual admin messages (null for every system-generated event).
 export const notifications = pgTable("notifications", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // Machine-readable category (see NotificationType in src/lib/notify.ts),
+  // used to pick an icon/color in the notification bell. Defaults to
+  // "admin_message" so existing rows from before this column existed keep
+  // rendering exactly as before.
+  type: text("type").notNull().default("admin_message"),
   title: text("title").notNull(),
   message: text("message").notNull(),
   sentBy: uuid("sent_by").references(() => users.id, { onDelete: "set null" }),
   readAt: timestamp("read_at", { withTimezone: true }),
+  // Outcome of trying to also email this notification: "sent" | "failed" |
+  // "skipped" (no email on file / demo account) | "disabled" (user turned
+  // off email notifications) | "stubbed" (no email provider configured in
+  // this environment) | null (this event type never emails, e.g. a routine
+  // self-initiated cancellation the user already saw confirmed on screen).
+  emailStatus: text("email_status"),
+  emailError: text("email_error"), // short diagnostic when emailStatus = "failed"
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

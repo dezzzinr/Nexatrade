@@ -16,7 +16,8 @@ type Profile = {
   dateOfBirth: string | null; gender: string | null; country: string | null; state: string | null;
   city: string | null; address: string | null; phone: string | null; profilePhoto: string | null;
   referralCode: string | null; hasSecurityQuestion: boolean; securityQuestion: string | null;
-  termsAcceptedAt: string | null; privacyAcceptedAt: string | null; currency: string; language?: string; createdAt: string;
+  termsAcceptedAt: string | null; privacyAcceptedAt: string | null; currency: string; language?: string;
+  emailNotifications?: boolean; createdAt: string;
 };
 
 type Props = {
@@ -30,6 +31,7 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingLanguage, setSavingLanguage] = useState(false);
+  const [savingEmailNotifications, setSavingEmailNotifications] = useState(false);
   const [fx, setFx] = useState<{ rate: number; status: string } | null>(null);
 
   const [form, setForm] = useState<Partial<Profile>>({});
@@ -120,6 +122,21 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
       notify(err instanceof Error ? err.message : "Update failed.", true);
     } finally {
       setSavingLanguage(false);
+    }
+  };
+
+  const saveEmailNotifications = async (emailNotifications: boolean) => {
+    setSavingEmailNotifications(true);
+    try {
+      const result = await patch({ action: "updateProfile", emailNotifications });
+      setProfile(result.profile);
+      setForm((f) => ({ ...f, emailNotifications: result.profile.emailNotifications }));
+      notify(emailNotifications ? "Email notifications turned on." : "Email notifications turned off.");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Update failed.", true);
+      setForm((f) => ({ ...f, emailNotifications: !emailNotifications }));
+    } finally {
+      setSavingEmailNotifications(false);
     }
   };
 
@@ -263,6 +280,21 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
         <div className="panel">
           <h3>Display language</h3><p className="panel-subtitle">Translates the app&apos;s menus, buttons, and headings. Market data and numbers are unaffected.</p>
           <div className="select-wrap"><select data-testid="language-select" value={form.language ?? "en"} disabled={savingLanguage} onChange={(e) => { setForm({ ...form, language: e.target.value }); void saveLanguage(e.target.value); }}>{LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.flag} {l.nativeLabel}</option>)}</select></div>
+        </div>
+
+        <div className="panel">
+          <h3>Notifications</h3>
+          <p className="panel-subtitle">Notable account and trading activity always appears in your notification bell. Turn this on to also get it by email.</p>
+          <label className="toggle-row" style={{ display: "flex", alignItems: "center", gap: 10, cursor: savingEmailNotifications ? "default" : "pointer" }}>
+            <input
+              type="checkbox"
+              data-testid="email-notifications-toggle"
+              checked={form.emailNotifications ?? true}
+              disabled={savingEmailNotifications}
+              onChange={(e) => { setForm({ ...form, emailNotifications: e.target.checked }); void saveEmailNotifications(e.target.checked); }}
+            />
+            <span>Email me about account activity (sign-ins, trades, deposits/withdrawals, subscriptions, and more)</span>
+          </label>
         </div>
 
         <div className="panel">

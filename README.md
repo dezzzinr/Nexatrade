@@ -159,7 +159,7 @@ Set these from a user's **Manage users → [user] → Account standing** panel, 
 
 **Balance edits.** The "Edit balance" panel lets an admin directly set a user's cash balance to any value. The difference is always logged as an `admin_credit` or `admin_debit` transaction in the user's transaction history (visible to them under Transactions) regardless of whether an admin note is supplied — a note is optional, but the audit trail is not.
 
-**Notifications.** Admins can send a one-off title + message to a single user from their detail view; it appears in that user's notification bell (top-right of the main app) and is marked read when they open it. There is no broadcast-to-all-users feature — notifications are always addressed to one specific account.
+**Notifications.** Admins can send a one-off title + message to a single user from their detail view; it appears in that user's notification bell (top-right of the main app), is also emailed to them (see the notification system section below), and is marked read when they open it. There is no broadcast-to-all-users feature — notifications are always addressed to one specific account.
 
 **Manual trade placement.** For users who call or message support asking for a trade to be placed on their behalf, the "Place a manual trade" panel lets an admin buy/sell any asset for that user. It defaults to the current live market price, or an admin can supply a custom fill price (e.g. to honor a price quoted to the user over the phone). These trades bypass that user's own trade-size limit/suspension (the admin is explicitly authorizing it) and are tagged `placedBy` the admin — shown to the user as a small "Placed by support" badge in their trade history, with no admin name disclosed.
 
@@ -202,3 +202,19 @@ Registering or logging in with a matching email automatically promotes that acco
 ### New environment variable
 
 None required — MyMemory's translation endpoint is free and keyless. If you want higher translation quality/limits in production, swap the implementation in `src/lib/translate-server.ts` (`translateOne`) for a paid provider (DeepL, Google Cloud Translation, Azure Translator) — the caching layer and the rest of the app don't need to change.
+
+## Notification system: in-app + email
+
+Every notable account/trading event - account created, sign-in, password/security changes, trades, order fills/cancellations, position opens/closes/liquidations, deposit and withdrawal submissions and admin reviews, bot/copy-trader/plan subscriptions and admin cancellations, admin balance credits/debits, account status changes, and direct admin messages - creates a **notification**, visible in the bell icon in the topbar for every user (`src/lib/notify.ts` → `notifyUser()`, called from every relevant route and from the trading engine's fill/close functions). Each type gets its own icon/color in the bell for quick scanning.
+
+**Email, via Resend.** Real (non-demo) accounts with an email on file also get these events emailed, using a shared branded HTML template (`src/lib/email-server.ts`). Sign-ins are always emailed by design, since that's the one event most worth knowing about even away from the app. Email sending uses Next.js's `after()` so it runs after the response is already sent and never adds latency to the request that triggered it - this matters because the trading engine's background sweep can fire fill/liquidation notifications for *other* users while unrelated traffic is being served. Two purely self-initiated, already-on-screen actions (cancelling your own order, manually closing your own position) are logged in-app only and never emailed, to avoid noise.
+
+**Per-user control.** Profile → Notifications has a single "Email me about account activity" toggle (on by default). It's deliberately a simple on/off switch rather than per-category preferences. In-app notifications in the bell always keep working regardless of this toggle, so there's always a complete activity record.
+
+**Works out of the box, even without an email provider.** Without `RESEND_API_KEY` configured, every email is "stubbed" - logged to the server console with `[email:stub]`, and recorded as such on the notification row - so the whole pipeline (including every route's notification logic) runs and is testable with zero external configuration. Setting `RESEND_API_KEY` activates real delivery with no other code changes.
+
+### New environment variables
+
+- `RESEND_API_KEY` (optional) - get a free key at [resend.com](https://resend.com/api-keys). Omit it to keep emails stubbed/logged only.
+- `EMAIL_FROM` (optional) - defaults to `NexaTrade <onboarding@resend.dev>`. On Resend's free tier (no verified domain) this must stay as `onboarding@resend.dev`, and mail can only be received at the address you signed up to Resend with; verify a custom domain in Resend for real multi-user delivery.
+- `APP_URL` (optional) - your deployed URL, used only to build the "Open NexaTrade" button in emails. Auto-detected from Vercel's `VERCEL_URL` when deployed there.

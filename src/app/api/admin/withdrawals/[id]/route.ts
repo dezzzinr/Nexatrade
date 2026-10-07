@@ -4,6 +4,7 @@ import { withdrawalRequests, users, transactions } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
 import { withdrawalMethodLabel } from "@/lib/withdrawals";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const adminNote = body.adminNote ? String(body.adminNote).trim().slice(0, 1000) || null : null;
     if (decision === "reject" && !adminNote) return bad("Add a short note explaining why this withdrawal was rejected.");
 
-    const message = await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [row] = await tx.select().from(withdrawalRequests).where(eq(withdrawalRequests.id, id)).for("update");
       if (!row) throw new Error("Withdrawal request not found.");
       if (row.status !== "pending") throw new Error("This request has already been reviewed.");
@@ -46,10 +47,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .set({ status: decision === "approve" ? "approved" : "rejected", adminNote, reviewedBy: admin.id, reviewedAt: new Date() })
         .where(eq(withdrawalRequests.id, id));
 
-      return decision === "approve" ? "Withdrawal approved and marked as sent." : "Withdrawal rejected and the held amount was returned to the user's balance.";
+      return {
+        message: decision === "approve" ? "Withdrawal approved and marked as sent." : "Withdrawal rejected and the held amount was returned to the user's balance.",
+        userId: row.userId,
+        amount: row.amount,
+        method: row.method,
+        methodLabel: row.methodLabel,
+      };
     });
 
-    return NextResponse.json({ success: true, message });
+    await notifyUser({
+      userId: result.userId,
+      type: decision === "approve" ? "withdrawal_approved" : "withdrawal_rejected",
+      title: decision === "approve" ? "Withdrawal approved" : "Withdrawal rejected",
+      message: decision === "approve"
+        ? `Your $${Number(result.amount).toFixed(2)} ${withdrawalMethodLabel(result.method, result.methodLabel)} withdrawal was approved and marked as sent.`
+        : `Your $${Number(result.amount).toFixed(2)} ${withdrawalMethodLabel(result.method, result.methodLabel)} withdrawal was rejected and the held amount was returned to your balance.${adminNote ? ` Reason: ${adminNote}` : ""}`,
+    });
+
+    return NextResponse.json({ success: true, message: result.message });
   } catch (error) {
     console.error("Admin withdrawal review:", error);
     return bad(error instanceof Error ? error.message : "Something went wrong.", 400);

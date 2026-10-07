@@ -18,6 +18,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { holdings, orders, positions, trades, transactions, users } from "@/db/schema";
 import { spotOrderShouldFill, spotOrderFillPrice, positionCloseEvent, realizedPnl, type PendingOrderType } from "@/lib/trading";
+import { marketPrice } from "@/lib/market";
+import { notifyUser } from "@/lib/notify";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -89,13 +91,13 @@ export async function reservedSellQuantity(tx: Tx, userId: string, symbol: strin
 // placement, and by the sweeps below) -------------------------------------
 
 export async function evaluateOneOrder(orderId: string, currentPrice: number): Promise<boolean> {
-  return db.transaction(async (tx) => {
+  const filled = await db.transaction(async (tx) => {
     const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
-    if (!order || order.status !== "open") return false;
+    if (!order || order.status !== "open") return null;
     const type = order.type as PendingOrderType;
     const side = order.side as "buy" | "sell";
     const shouldFill = spotOrderShouldFill(type, side, Number(order.triggerPrice), currentPrice);
-    if (!shouldFill) return false;
+    if (!shouldFill) return null;
     const fillPrice = spotOrderFillPrice(type, side, Number(order.triggerPrice), currentPrice);
     try {
       await executeSpotFill(tx, order.userId, order.symbol, side, Number(order.quantity), fillPrice, order.id);
@@ -104,17 +106,28 @@ export async function evaluateOneOrder(orderId: string, currentPrice: number): P
       // reserved cash/asset some other way) - cancel instead of silently
       // dropping it so it doesn't sit open forever pretending to be valid.
       await tx.update(orders).set({ status: "cancelled", cancelledAt: new Date() }).where(eq(orders.id, order.id));
-      return false;
+      return null;
     }
     await tx.update(orders).set({ status: "filled", filledPrice: fillPrice.toFixed(8), filledAt: new Date() }).where(eq(orders.id, order.id));
-    return true;
+    return { userId: order.userId, symbol: order.symbol, side, quantity: order.quantity, fillPrice };
   });
+  if (!filled) return false;
+  // Notified after the transaction commits (plain db, not tx) - this can
+  // fire for an arbitrary other user mid-sweep, so the email send is
+  // deferred and must never block whichever request triggered the sweep.
+  await notifyUser({
+    userId: filled.userId,
+    type: "order_filled",
+    title: `${filled.side === "buy" ? "Buy" : "Sell"} order filled`,
+    message: `Your ${filled.side} order for ${Number(filled.quantity)} ${filled.symbol} filled at ${marketPrice(filled.fillPrice)}.`,
+  });
+  return true;
 }
 
 export async function evaluateOnePosition(positionId: string, currentPrice: number): Promise<boolean> {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [position] = await tx.select().from(positions).where(eq(positions.id, positionId)).for("update");
-    if (!position || position.status !== "open") return false;
+    if (!position || position.status !== "open") return null;
     const event = positionCloseEvent(
       position.side as "long" | "short",
       Number(position.liquidationPrice),
@@ -122,7 +135,7 @@ export async function evaluateOnePosition(positionId: string, currentPrice: numb
       position.stopLossPrice == null ? null : Number(position.stopLossPrice),
       currentPrice,
     );
-    if (!event) return false;
+    if (!event) return null;
     const pnl = event.reason === "liquidation"
       ? -Number(position.margin)
       : realizedPnl(Number(position.margin), closePnl(position, event.price));
@@ -141,8 +154,18 @@ export async function evaluateOnePosition(positionId: string, currentPrice: numb
       amount: pnl.toFixed(2),
       description: `${event.reason === "liquidation" ? "Liquidated" : event.reason === "take_profit" ? "Take-profit closed" : "Stop-loss closed"} ${Number(position.leverage)}x ${position.side} ${position.symbol} position at $${event.price}`,
     });
-    return true;
+    return { userId: position.userId, symbol: position.symbol, side: position.side, leverage: Number(position.leverage), pnl, event };
   });
+  if (!result) return false;
+  const { event } = result;
+  const label = event.reason === "liquidation" ? "Liquidated" : event.reason === "take_profit" ? "Take-profit hit" : "Stop-loss hit";
+  await notifyUser({
+    userId: result.userId,
+    type: "position_auto_closed",
+    title: `${label}: ${result.symbol} position`,
+    message: `${label} on your ${result.leverage}x ${result.side} ${result.symbol} position at ${marketPrice(event.price)} (${result.pnl >= 0 ? "+" : ""}$${result.pnl.toFixed(2)} P&L).`,
+  });
+  return true;
 }
 
 function closePnl(position: typeof positions.$inferSelect, closePrice: number): number {

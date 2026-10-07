@@ -5,6 +5,7 @@ import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
 import { blockedActionMessage } from "@/lib/accounts";
 import { SUBSCRIPTION_MS } from "@/lib/copy-trading";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -71,6 +72,13 @@ export async function POST(request: NextRequest) {
       }
       await tx.insert(copySubscriptions).values({ userId: user.id, traderId, amount: amount.toFixed(2), startedAt: now, expiresAt });
       await tx.insert(transactions).values({ userId: user.id, type: "subscription", amount: amount.toFixed(2), description: `Copy trading: ${trader.name} (7 days)` });
+    });
+
+    await notifyUser({
+      userId: user.id,
+      type: "copy_subscribed",
+      title: `Subscribed to copy ${trader.name}`,
+      message: `You subscribed to copy trade ${trader.name} for 7 days (ends ${expiresAt.toLocaleDateString()}).`,
     });
 
     return NextResponse.json({ success: true, expiresAt, message: `Subscribed to ${trader.name} for 7 days.` });

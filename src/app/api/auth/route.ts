@@ -7,6 +7,7 @@ import { calculateAge, isValidEmail, isValidUsername, MIN_SIGNUP_AGE, normalizeS
 import { ALLOWED_AVATAR_MIME_TYPES, MAX_AVATAR_BYTES } from "@/lib/profile";
 import { parseDataUrl } from "@/lib/deposits";
 import { currencyForCountry, countryByCode } from "@/lib/countries";
+import { notifyUser } from "@/lib/notify";
 
 function bad(error: string, status = 400) {
   return NextResponse.json({ error }, { status });
@@ -101,6 +102,12 @@ export async function POST(request: NextRequest) {
         privacyAcceptedAt: now,
         currency: currencyForCountry(country),
       }).returning();
+      await notifyUser({
+        userId: user.id,
+        type: "account_created",
+        title: "Welcome to NexaTrade!",
+        message: "Your account has been created with $10,000 in paper trading funds. Explore the markets, place your first trade, or check out the trading bots and copy trading catalog whenever you're ready.",
+      });
       return await setSession(NextResponse.json({ success: true }), user.id);
     }
 
@@ -113,6 +120,13 @@ export async function POST(request: NextRequest) {
       if (user.accountStatus === "locked") return bad("This account has been locked. Contact support for help.", 403);
       // Allow promoting an existing account to admin by listing its email in ADMIN_EMAILS.
       if (user.email && isAdminEmail(user.email) && user.role !== "admin") await db.update(users).set({ role: "admin" }).where(eq(users.id, user.id));
+      const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || null;
+      await notifyUser({
+        userId: user.id,
+        type: "login",
+        title: "New sign-in to your account",
+        message: `We noticed a new sign-in to your NexaTrade account on ${new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}${ip ? ` from ${ip}` : ""}. If this wasn't you, change your password right away from Profile → Security.`,
+      });
       return await setSession(NextResponse.json({ success: true }), user.id);
     }
 
@@ -140,6 +154,12 @@ export async function POST(request: NextRequest) {
       // Reset invalidates any existing sessions (e.g. on a device someone
       // else was using), matching standard password-reset behavior.
       await db.delete(sessions).where(eq(sessions.userId, user.id));
+      await notifyUser({
+        userId: user.id,
+        type: "password_changed",
+        title: "Your password was reset",
+        message: "Your NexaTrade password was just reset using your security question. If you didn't do this, contact support immediately.",
+      });
       return NextResponse.json({ success: true });
     }
 

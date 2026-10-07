@@ -6,6 +6,7 @@ import { getUser } from "@/lib/auth";
 import { marketPrice } from "@/lib/market";
 import { getMarketSnapshot } from "@/lib/market-server";
 import { positionPnl, realizedPnl, type PositionSide } from "@/lib/trading";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -43,7 +44,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         amount: pnl.toFixed(2),
         description: `Closed ${Number(position.leverage)}x ${position.side} ${position.symbol} position at ${marketPrice(asset.price)}`,
       });
-      return { pnl, price: asset.price };
+      return { pnl, price: asset.price, symbol: position.symbol, side: position.side, leverage: Number(position.leverage) };
+    });
+
+    await notifyUser({
+      userId: user.id,
+      type: "position_closed",
+      title: "Position closed",
+      message: `Closed your ${result.leverage}x ${result.side} ${result.symbol} position at ${marketPrice(result.price)} (${result.pnl >= 0 ? "+" : ""}$${result.pnl.toFixed(2)} P&L).`,
     });
 
     return NextResponse.json({ success: true, message: `Position closed at ${marketPrice(result.price)} (${result.pnl >= 0 ? "+" : ""}$${result.pnl.toFixed(2)} P&L).` });

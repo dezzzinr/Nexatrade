@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { notifications, users } from "@/db/schema";
+import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (title.length < 2) return bad("Enter a short title for this notification.");
     if (message.length < 2) return bad("Enter a message to send.");
 
-    const [row] = await db.insert(notifications).values({ userId: id, title, message, sentBy: admin.id }).returning();
+    const row = await notifyUser({ userId: id, type: "admin_message", title, message, sentBy: admin.id });
     return NextResponse.json({ success: true, notification: row });
   } catch (error) {
     console.error("Admin send notification:", error);

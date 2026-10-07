@@ -4,6 +4,7 @@ import { users, holdings, trades, transactions, notifications, botSubscriptions,
 import { desc, eq, sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
 import { ACCOUNT_STATUSES } from "@/lib/accounts";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -105,12 +106,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       updates.role = role;
     }
     let statusChanging = false;
+    let newStatus: string | null = null;
     if (body.accountStatus !== undefined) {
       const accountStatus = String(body.accountStatus);
       if (!ACCOUNT_STATUSES.includes(accountStatus as typeof ACCOUNT_STATUSES[number])) return bad("Choose a valid account status.");
       if (id === admin.id && accountStatus !== "active") return bad("You can't change your own account status.");
       updates.accountStatus = accountStatus;
       statusChanging = true;
+      newStatus = accountStatus;
     }
     if (body.maxTradeAmount !== undefined) {
       if (body.maxTradeAmount === null || body.maxTradeAmount === "") updates.maxTradeAmount = null;
@@ -128,6 +131,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const [row] = await db.update(users).set(updates).where(eq(users.id, id)).returning(PUBLIC_COLUMNS);
     if (!row) return bad("User not found.", 404);
+
+    if (statusChanging && newStatus) {
+      const statusLabel: Record<string, string> = { active: "reinstated to active standing", limited: "placed under limited restrictions", suspended: "suspended", locked: "locked" };
+      const reason = typeof body.statusReason === "string" ? body.statusReason.trim() : "";
+      await notifyUser({
+        userId: id,
+        type: "account_status_changed",
+        title: "Your account status changed",
+        message: `Your account was ${statusLabel[newStatus] ?? `set to ${newStatus}`}.${reason ? ` Reason: ${reason}` : ""} Contact support if you have questions.`,
+      });
+    }
 
     // Note: we deliberately don't delete the user's existing sessions here.
     // Their session stays valid in the database, so the next request they

@@ -8,6 +8,7 @@ import { getMarketSnapshot } from "@/lib/market-server";
 import { blockedActionMessage, tradeLimitMessage } from "@/lib/accounts";
 import { executeSpotFill, reservedBuyCash, reservedSellQuantity, sweepForUser } from "@/lib/trading-engine";
 import { getFxRate } from "@/lib/fx-server";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -124,6 +125,14 @@ export async function POST(request: NextRequest) {
           }
         }
         await executeSpotFill(tx, user.id, symbol, side, quantity, asset.price);
+      });
+      // blockedActionMessage() above already rules out demo accounts, so
+      // every notification from here on is for a real, registered user.
+      await notifyUser({
+        userId: user.id,
+        type: "trade_placed",
+        title: `${side === "buy" ? "Bought" : "Sold"} ${symbol}`,
+        message: `${side === "buy" ? "Bought" : "Sold"} ${quantity} ${symbol} at ${marketPrice(asset.price)} for a total of $${total.toFixed(2)}.`,
       });
       return NextResponse.json({ success: true, price: asset.price, total, message: `${side === "buy" ? "Bought" : "Sold"} ${quantity} ${symbol} at ${marketPrice(asset.price)}` });
     }

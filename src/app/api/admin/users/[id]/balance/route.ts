@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { users, transactions } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const note = body.note ? String(body.note).trim().slice(0, 300) : "";
     if (!Number.isFinite(newBalance) || newBalance < 0 || newBalance > 100000000) return bad("Enter a valid balance.");
 
-    const message = await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [wallet] = await tx.select().from(users).where(eq(users.id, id)).for("update");
       if (!wallet) throw new Error("User not found.");
       const oldBalance = Number(wallet.cashBalance);
@@ -34,10 +35,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           description: note || `Balance ${delta > 0 ? "increased" : "decreased"} by admin`,
         });
       }
-      return `Balance updated to $${newBalance.toFixed(2)}.`;
+      return { message: `Balance updated to $${newBalance.toFixed(2)}.`, delta };
     });
 
-    return NextResponse.json({ success: true, message });
+    if (Math.abs(result.delta) >= 0.01) {
+      await notifyUser({
+        userId: id,
+        type: result.delta > 0 ? "admin_credit" : "admin_debit",
+        title: result.delta > 0 ? "Balance credited" : "Balance debited",
+        message: `An admin ${result.delta > 0 ? "credited" : "debited"} $${Math.abs(result.delta).toFixed(2)} ${result.delta > 0 ? "to" : "from"} your account balance.${note ? ` Note: ${note}` : ""}`,
+      });
+    }
+
+    return NextResponse.json({ success: true, message: result.message });
   } catch (error) {
     console.error("Admin balance edit:", error);
     return bad(error instanceof Error ? error.message : "Unable to update balance.", 400);

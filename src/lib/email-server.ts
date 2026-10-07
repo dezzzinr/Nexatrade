@@ -1,0 +1,86 @@
+// Outbound email, server-only. Uses Resend (https://resend.com) over plain
+// fetch (no SDK dependency needed - it's a single JSON POST). If no API key
+// is configured, every send is "stubbed": logged to the server console and
+// recorded as such on the notification row, so the whole notification
+// pipeline works out of the box in any environment (including this sandbox)
+// without requiring a real email account, and starts actually delivering
+// the moment RESEND_API_KEY is added to .env - no other code changes.
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const EMAIL_FROM = process.env.EMAIL_FROM || "NexaTrade <onboarding@resend.dev>";
+
+export type SendEmailResult =
+  | { status: "sent" }
+  | { status: "stubbed" }
+  | { status: "failed"; error: string };
+
+export async function sendEmail(input: { to: string; subject: string; html: string; text: string }): Promise<SendEmailResult> {
+  if (!RESEND_API_KEY) {
+    console.log(`[email:stub] to=${input.to} subject="${input.subject}" (set RESEND_API_KEY in .env to actually send this)`);
+    return { status: "stubbed" };
+  }
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: EMAIL_FROM, to: input.to, subject: input.subject, html: input.html, text: input.text }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error("[email:failed]", res.status, body.slice(0, 500));
+      return { status: "failed", error: `Resend ${res.status}: ${body.slice(0, 300)}` };
+    }
+    return { status: "sent" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown email error";
+    console.error("[email:failed]", message);
+    return { status: "failed", error: message.slice(0, 300) };
+  }
+}
+
+// Base URL used for the "Open NexaTrade" link in emails. Falls back to
+// Vercel's auto-populated host if APP_URL isn't set, and omits the button
+// entirely if neither is available (e.g. local dev with no env set).
+export function appUrl(): string | null {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return null;
+}
+
+// Shared branded wrapper for every notification email - a simple, readable
+// card rather than per-event bespoke HTML, so all the emails look and feel
+// consistent and new event types are just a title/message away.
+export function notificationEmailHtml(input: { name: string; title: string; message: string }): string {
+  const link = appUrl();
+  const button = link
+    ? `<tr><td style="padding-top:24px;"><a href="${link}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:11px 22px;border-radius:8px;">Open NexaTrade</a></td></tr>`
+    : "";
+  return `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:32px 16px;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;">
+    <tr><td style="background:#4f46e5;padding:20px 28px;">
+      <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.02em;">NexaTrade</span>
+    </td></tr>
+    <tr><td style="padding:28px;">
+      <table role="presentation" width="100%">
+        <tr><td style="font-size:13px;color:#6b7280;padding-bottom:6px;">Hi ${escapeHtml(input.name)},</td></tr>
+        <tr><td style="font-size:17px;font-weight:700;color:#111827;padding-bottom:10px;">${escapeHtml(input.title)}</td></tr>
+        <tr><td style="font-size:14px;line-height:1.6;color:#374151;">${escapeHtml(input.message)}</td></tr>
+        ${button}
+      </table>
+    </td></tr>
+    <tr><td style="padding:16px 28px;background:#f9fafb;border-top:1px solid #f0f0f0;">
+      <span style="font-size:11px;color:#9ca3af;">You're receiving this because notable account activity notifications are on for your NexaTrade account. Turn these off anytime from Profile → Notifications. This is a paper-trading simulation - no real money is involved.</span>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}

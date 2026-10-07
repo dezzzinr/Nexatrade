@@ -8,6 +8,7 @@ import { parseDataUrl } from "@/lib/deposits";
 import { countryByCode } from "@/lib/countries";
 import { getFxRate } from "@/lib/fx-server";
 import { isLanguageCode } from "@/lib/i18n";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -34,6 +35,7 @@ function publicProfile(user: typeof users.$inferSelect) {
     privacyAcceptedAt: user.privacyAcceptedAt,
     currency: user.currency,
     language: user.language,
+    emailNotifications: user.emailNotifications,
     createdAt: user.createdAt,
   };
 }
@@ -117,6 +119,7 @@ export async function PATCH(request: NextRequest) {
         if (!isLanguageCode(language)) return bad("Select a supported language.");
         updates.language = language;
       }
+      if (typeof body.emailNotifications === "boolean") updates.emailNotifications = body.emailNotifications;
       if (body.profilePhoto !== undefined) {
         if (body.profilePhoto === null) {
           updates.profilePhoto = null;
@@ -142,6 +145,12 @@ export async function PATCH(request: NextRequest) {
       if (newPassword.length < 8) return bad("New password must be at least 8 characters.");
       if (newPassword !== confirmPassword) return bad("New password and confirmation do not match.");
       await db.update(users).set({ passwordHash: hashPassword(newPassword) }).where(eq(users.id, user.id));
+      await notifyUser({
+        userId: user.id,
+        type: "password_changed",
+        title: "Your password was changed",
+        message: "Your NexaTrade password was just changed. If you didn't make this change, contact support immediately.",
+      });
       return NextResponse.json({ success: true });
     }
 
@@ -153,6 +162,12 @@ export async function PATCH(request: NextRequest) {
       if (!user.passwordHash || !checkPassword(currentPassword, user.passwordHash)) return bad("Current password is incorrect.", 401);
       if (!securityQuestion || !securityAnswer) return bad("Enter both a security question and an answer.");
       await db.update(users).set({ securityQuestion, securityAnswerHash: hashPassword(normalizeSecurityAnswer(securityAnswer)) }).where(eq(users.id, user.id));
+      await notifyUser({
+        userId: user.id,
+        type: "security_question_updated",
+        title: "Security question updated",
+        message: "Your NexaTrade account recovery question was just updated. If you didn't make this change, contact support immediately.",
+      });
       return NextResponse.json({ success: true });
     }
 

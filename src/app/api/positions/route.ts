@@ -7,6 +7,7 @@ import { getAsset, marketPrice } from "@/lib/market";
 import { getMarketSnapshot } from "@/lib/market-server";
 import { blockedActionMessage, tradeLimitMessage } from "@/lib/accounts";
 import { LEVERAGE_OPTIONS, MAX_MARGIN, MIN_MARGIN, POSITION_SIDES, liquidationPrice, positionPnl, validatePositionTarget, type PositionSide } from "@/lib/trading";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -102,6 +103,13 @@ export async function POST(request: NextRequest) {
         description: `Opened ${leverage}x ${side} ${symbol} position (margin $${margin.toFixed(2)}, entry ${marketPrice(entryPrice)})`,
       });
       return row.id;
+    });
+
+    await notifyUser({
+      userId: user.id,
+      type: "position_opened",
+      title: `Opened ${leverage}x ${side} ${symbol} position`,
+      message: `Opened a ${leverage}x ${side} ${symbol} position at ${marketPrice(entryPrice)} with $${margin.toFixed(2)} margin. Liquidation at ${marketPrice(liqPrice)}.`,
     });
 
     return NextResponse.json({

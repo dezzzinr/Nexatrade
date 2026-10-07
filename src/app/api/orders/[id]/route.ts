@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -21,6 +22,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (order.status !== "open") throw new Error("This order is no longer open.");
       await tx.update(orders).set({ status: "cancelled", cancelledAt: new Date() }).where(eq(orders.id, id));
       return order;
+    });
+
+    await notifyUser({
+      userId: user.id,
+      type: "order_cancelled",
+      title: "Order cancelled",
+      message: `Your ${updated.side} order for ${updated.symbol} was cancelled.`,
     });
 
     return NextResponse.json({ success: true, message: `Cancelled ${updated.side} order for ${updated.symbol}.` });

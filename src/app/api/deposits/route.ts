@@ -5,6 +5,7 @@ import { desc, eq, and } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
 import { blockedActionMessage } from "@/lib/accounts";
 import { ALLOWED_RECEIPT_MIME_TYPES, DEPOSIT_METHOD_IDS, MAX_RECEIPT_BYTES, parseDataUrl } from "@/lib/deposits";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -98,6 +99,13 @@ export async function POST(request: NextRequest) {
         status: "pending",
       })
       .returning({ id: depositRequests.id });
+
+    await notifyUser({
+      userId: user.id,
+      type: "deposit_submitted",
+      title: "Deposit request submitted",
+      message: `Your $${amount.toFixed(2)} deposit request via ${method} was submitted and is awaiting admin review.`,
+    });
 
     return NextResponse.json({ success: true, id: row.id, message: "Deposit request submitted for review. Your balance updates once an admin verifies your receipt." });
   } catch (error) {

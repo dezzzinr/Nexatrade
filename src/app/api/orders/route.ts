@@ -8,6 +8,7 @@ import { getMarketSnapshot } from "@/lib/market-server";
 import { blockedActionMessage, tradeLimitMessage } from "@/lib/accounts";
 import { PENDING_ORDER_TYPES, allowedOrderTypesForSide, orderTypeLabel, spotOrderShouldFill, spotOrderFillPrice, type PendingOrderType } from "@/lib/trading";
 import { evaluateOneOrder, reservedBuyCash, reservedSellQuantity } from "@/lib/trading-engine";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -98,6 +99,18 @@ export async function POST(request: NextRequest) {
       filled = await evaluateOneOrder(orderId, asset.price);
     }
     const fillPrice = spotOrderFillPrice(type, side, triggerPrice, asset.price);
+
+    // evaluateOneOrder() above already sends an "order_filled" notification
+    // when it fills - only notify here for the order staying open, so the
+    // user gets exactly one notification either way, not two.
+    if (!filled) {
+      await notifyUser({
+        userId: user.id,
+        type: "order_placed",
+        title: `${orderTypeLabel(type)} order placed`,
+        message: `Your ${orderTypeLabel(type).toLowerCase()} order to ${side} ${quantity} ${symbol} at ${marketPrice(triggerPrice)} is open and will fill automatically when the market reaches that price.`,
+      });
+    }
 
     return NextResponse.json({
       success: true,

@@ -5,6 +5,7 @@ import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
 import { blockedActionMessage } from "@/lib/accounts";
 import { SUBSCRIPTION_MS } from "@/lib/plans";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -73,6 +74,13 @@ export async function POST(request: NextRequest) {
       }
       await tx.insert(planSubscriptions).values({ userId: user.id, planId, amount: amount.toFixed(2), startedAt: now, expiresAt });
       await tx.insert(transactions).values({ userId: user.id, type: "plan", amount: amount.toFixed(2), description: `${plan.name} plan subscription (7 days)` });
+    });
+
+    await notifyUser({
+      userId: user.id,
+      type: "plan_subscribed",
+      title: `Subscribed to the ${plan.name} plan`,
+      message: `You're now on the ${plan.name} plan for 7 days (ends ${expiresAt.toLocaleDateString()}).`,
     });
 
     return NextResponse.json({ success: true, expiresAt, message: `You're now on the ${plan.name} plan for 7 days.` });

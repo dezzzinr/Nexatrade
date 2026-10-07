@@ -5,6 +5,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
 import { blockedActionMessage } from "@/lib/accounts";
 import { WITHDRAWAL_METHOD_IDS } from "@/lib/withdrawals";
+import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -63,6 +64,13 @@ export async function POST(request: NextRequest) {
         .values({ userId: user.id, method, methodLabel, amount: amount.toFixed(2), destination, note, status: "pending" })
         .returning({ id: withdrawalRequests.id });
       return row.id;
+    });
+
+    await notifyUser({
+      userId: user.id,
+      type: "withdrawal_submitted",
+      title: "Withdrawal request submitted",
+      message: `Your $${amount.toFixed(2)} withdrawal request via ${method} was submitted and is awaiting admin review. The amount has been reserved from your available balance.`,
     });
 
     return NextResponse.json({ success: true, id, message: "Withdrawal request submitted for review. The amount has been reserved from your available balance." });
