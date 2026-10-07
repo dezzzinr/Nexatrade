@@ -11,13 +11,14 @@ type Props = {
 
 export default function ForgotPasswordModal({ onClose, onSwitchToLogin }: Props) {
   const { t } = useLanguage();
-  const [step, setStep] = useState<"identify" | "answer" | "done">("identify");
+  const [step, setStep] = useState<"identify" | "answer" | "done" | "emailSent">("identify");
   const [identifier, setIdentifier] = useState("");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
   const [error, setError] = useState("");
 
   const lookUp = async (e: React.FormEvent) => {
@@ -35,6 +36,22 @@ export default function ForgotPasswordModal({ onClose, onSwitchToLogin }: Props)
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const sendEmailLink = async () => {
+    setError("");
+    if (!identifier.trim()) return setError("Enter your email or username.");
+    setEmailSending(true);
+    try {
+      const res = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "requestPasswordReset", identifier: identifier.trim() }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong.");
+      setStep("emailSent");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setEmailSending(false);
     }
   };
 
@@ -71,6 +88,12 @@ export default function ForgotPasswordModal({ onClose, onSwitchToLogin }: Props)
             {error && <p className="form-error-text">{error}</p>}
             <button className="primary-btn full-btn" disabled={submitting}>{submitting ? t("Looking up...") : t("Continue")}<ArrowRight size={17} /></button>
           </form>
+          <div className="modal-switch"><button type="button" disabled={emailSending} onClick={sendEmailLink}>{emailSending ? t("Sending...") : t("Email me a reset link instead")}</button></div>
+        </>}
+        {step === "emailSent" && <>
+          <h2>{t("Check your email")}</h2>
+          <p>{t("If an account with an email on file matches that, we've sent a password reset link. Check your inbox (and spam folder) - the link expires in 30 minutes.")}</p>
+          <button className="primary-btn full-btn" onClick={onSwitchToLogin}>{t("Back to sign in")}<ArrowRight size={17} /></button>
         </>}
         {step === "answer" && <>
           <h2>{t("Answer your security question")}</h2>

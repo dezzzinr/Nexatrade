@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
 import { db } from "@/db";
-import { users, sessions } from "@/db/schema";
+import { users, sessions, transactions } from "@/db/schema";
 import { eq, or, sql } from "drizzle-orm";
-import { checkPassword, clearSession, hashPassword, isAdminEmail, setSession } from "@/lib/auth";
+import { checkPassword, clearSession, hashPassword, hashToken, isAdminEmail, setSession } from "@/lib/auth";
 import { calculateAge, isValidEmail, isValidUsername, MIN_SIGNUP_AGE, normalizeSecurityAnswer } from "@/lib/profile";
 import { ALLOWED_AVATAR_MIME_TYPES, MAX_AVATAR_BYTES } from "@/lib/profile";
 import { parseDataUrl } from "@/lib/deposits";
 import { currencyForCountry, countryByCode } from "@/lib/countries";
 import { notifyUser } from "@/lib/notify";
+import { findReferrer, generateReferralCode, REFERRAL_BONUS_AMOUNT } from "@/lib/referrals";
+import { passwordResetEmailHtml, sendEmail } from "@/lib/email-server";
 
 function bad(error: string, status = 400) {
   return NextResponse.json({ error }, { status });
@@ -42,7 +45,7 @@ export async function POST(request: NextRequest) {
       const address = body.address ? String(body.address).trim() : null;
       const phone = String(body.phone ?? "").trim();
       const profilePhoto = body.profilePhoto ? String(body.profilePhoto) : null;
-      const referralCode = body.referralCode ? String(body.referralCode).trim() : null;
+      const enteredReferralCode = body.referralCode ? String(body.referralCode).trim() : null;
       const securityQuestion = body.securityQuestion ? String(body.securityQuestion).trim() : null;
       const securityAnswer = body.securityAnswer ? String(body.securityAnswer).trim() : null;
       const termsAccepted = body.termsAccepted === true;
@@ -80,6 +83,8 @@ export async function POST(request: NextRequest) {
       if (existingUsername) return bad("That username is already taken.", 409);
 
       const now = new Date();
+      const referrer = enteredReferralCode ? await findReferrer(enteredReferralCode) : null;
+      const myReferralCode = await generateReferralCode();
       const [user] = await db.insert(users).values({
         name,
         email,
@@ -95,18 +100,42 @@ export async function POST(request: NextRequest) {
         address,
         phone,
         profilePhoto: avatarDataUrl,
-        referralCode,
+        referralCode: myReferralCode,
+        referredBy: referrer?.id ?? null,
         securityQuestion,
         securityAnswerHash: securityAnswer ? hashPassword(normalizeSecurityAnswer(securityAnswer)) : null,
         termsAcceptedAt: now,
         privacyAcceptedAt: now,
         currency: currencyForCountry(country),
       }).returning();
+
+      if (referrer) {
+        // One-time bonus to both sides, paid from nowhere (paper money) -
+        // logged as a transaction on each account just like any other
+        // balance change, so it shows up in Transactions history.
+        await db.transaction(async (tx) => {
+          await tx.update(users).set({ cashBalance: sql`${users.cashBalance} + ${REFERRAL_BONUS_AMOUNT}` }).where(eq(users.id, user.id));
+          await tx.update(users).set({ cashBalance: sql`${users.cashBalance} + ${REFERRAL_BONUS_AMOUNT}` }).where(eq(users.id, referrer.id));
+          await tx.insert(transactions).values([
+            { userId: user.id, type: "referral_bonus", amount: REFERRAL_BONUS_AMOUNT.toFixed(2), description: `Referral bonus for signing up with ${referrer.name}'s code` },
+            { userId: referrer.id, type: "referral_bonus", amount: REFERRAL_BONUS_AMOUNT.toFixed(2), description: `Referral bonus - ${name} signed up with your code` },
+          ]);
+        });
+        await notifyUser({
+          userId: referrer.id,
+          type: "referral_bonus",
+          title: "Your referral just signed up!",
+          message: `${name} created a NexaTrade account using your referral code. You've both been credited $${REFERRAL_BONUS_AMOUNT.toFixed(2)}.`,
+        });
+      }
+
       await notifyUser({
         userId: user.id,
         type: "account_created",
         title: "Welcome to NexaTrade!",
-        message: "Your account has been created with $10,000 in paper trading funds. Explore the markets, place your first trade, or check out the trading bots and copy trading catalog whenever you're ready.",
+        message: referrer
+          ? `Your account has been created with $${(10000 + REFERRAL_BONUS_AMOUNT).toLocaleString()} in paper trading funds (including a $${REFERRAL_BONUS_AMOUNT.toFixed(2)} referral bonus for signing up with ${referrer.name}'s code). Explore the markets, place your first trade, or check out the trading bots and copy trading catalog whenever you're ready.`
+          : "Your account has been created with $10,000 in paper trading funds. Explore the markets, place your first trade, or check out the trading bots and copy trading catalog whenever you're ready.",
       });
       return await setSession(NextResponse.json({ success: true }), user.id);
     }
@@ -159,6 +188,44 @@ export async function POST(request: NextRequest) {
         type: "password_changed",
         title: "Your password was reset",
         message: "Your NexaTrade password was just reset using your security question. If you didn't do this, contact support immediately.",
+      });
+      return NextResponse.json({ success: true });
+    }
+
+    // --- Forgot password, via an emailed link (fallback when no security
+    // question is set, or just preferred). Always responds with the same
+    // generic success message regardless of whether the account/email
+    // exists, so this endpoint can't be used to enumerate registered users.
+    if (action === "requestPasswordReset") {
+      const identifier = String(body.identifier ?? "").trim();
+      const genericOk = NextResponse.json({ success: true, message: "If an account with an email on file matches that, we've sent a password reset link. Check your inbox (and spam folder)." });
+      if (!identifier) return genericOk;
+      const user = await findByIdentifier(identifier);
+      if (!user || !user.email || user.isDemo) return genericOk;
+      const token = randomBytes(32).toString("hex");
+      await db.update(users).set({ resetTokenHash: hashToken(token), resetTokenExpiresAt: new Date(Date.now() + 30 * 60 * 1000) }).where(eq(users.id, user.id));
+      const { html, text } = passwordResetEmailHtml({ name: user.name, token });
+      const result = await sendEmail({ to: user.email, subject: "Reset your NexaTrade password", html, text });
+      if (result.status === "stubbed") console.log(`[password-reset:stub] token for ${user.email}: ${token}`);
+      return genericOk;
+    }
+    if (action === "resetPasswordWithToken") {
+      const token = String(body.token ?? "").trim();
+      const newPassword = String(body.newPassword ?? "");
+      if (!token) return bad("This reset link is invalid or has expired. Request a new one.");
+      if (newPassword.length < 8) return bad("New password must be at least 8 characters.");
+      const tokenHash = hashToken(token);
+      const [user] = await db.select().from(users).where(eq(users.resetTokenHash, tokenHash)).limit(1);
+      if (!user || !user.resetTokenExpiresAt || user.resetTokenExpiresAt.getTime() < Date.now()) {
+        return bad("This reset link is invalid or has expired. Request a new one.");
+      }
+      await db.update(users).set({ passwordHash: hashPassword(newPassword), resetTokenHash: null, resetTokenExpiresAt: null }).where(eq(users.id, user.id));
+      await db.delete(sessions).where(eq(sessions.userId, user.id));
+      await notifyUser({
+        userId: user.id,
+        type: "password_changed",
+        title: "Your password was reset",
+        message: "Your NexaTrade password was just reset using the emailed reset link. If you didn't do this, contact support immediately.",
       });
       return NextResponse.json({ success: true });
     }

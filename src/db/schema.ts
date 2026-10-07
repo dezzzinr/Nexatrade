@@ -21,9 +21,21 @@ export const users = pgTable("users", {
   phone: text("phone"),
   profilePhoto: text("profile_photo"), // base64 data URL, same storage pattern as deposit receipts
   // --- Profile: account setup -------------------------------------------
-  referralCode: text("referral_code"), // free-text, stored for record-keeping only (no validation/bonus logic yet)
+  // Every user gets their own unique shareable code, generated once at
+  // registration (src/lib/referrals.ts); it's never user-chosen. Shown on
+  // the Profile page so they can share it with friends.
+  referralCode: text("referral_code").unique(),
+  // The user whose referral code this account entered at signup, if any.
+  // Both sides get a one-time bonus credit (see src/lib/referrals.ts).
+  referredBy: uuid("referred_by").references((): any => users.id, { onDelete: "set null" }),
   securityQuestion: text("security_question"), // user-authored question, shown back to them verbatim
   securityAnswerHash: text("security_answer_hash"), // hashed like a password (answer is normalized to lowercase/trim first)
+  // Email-based "forgot password" flow: a short-lived, single-use token.
+  // Only one reset can be pending at a time - requesting a new one replaces
+  // it. Stored hashed (like a password) so a database leak alone can't be
+  // used to reset anyone's password.
+  resetTokenHash: text("reset_token_hash"),
+  resetTokenExpiresAt: timestamp("reset_token_expires_at", { withTimezone: true }),
   termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
   privacyAcceptedAt: timestamp("privacy_accepted_at", { withTimezone: true }),
   // Preferred display currency (ISO 4217). Defaults from `country` at signup
@@ -283,6 +295,31 @@ export const notifications = pgTable("notifications", {
   emailStatus: text("email_status"),
   emailError: text("email_error"), // short diagnostic when emailStatus = "failed"
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A user's starred assets for quick access from Markets (a "Watchlist" tab)
+// and a star toggle on every asset row. Purely a convenience list - it has
+// no effect on trading.
+export const watchlistItems = pgTable("watchlist_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  symbol: text("symbol").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex("watchlist_user_symbol_idx").on(table.userId, table.symbol)]);
+
+// "Notify me when BTC goes above/below $X." Evaluated by the same
+// opportunistic sweep as order fills/liquidations (src/lib/trading-engine.ts)
+// against live prices; triggering fires a notification (and optional email)
+// then marks the alert "triggered" - it's one-shot, not a standing order.
+export const priceAlerts = pgTable("price_alerts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  symbol: text("symbol").notNull(),
+  direction: text("direction").notNull(), // "above" | "below"
+  targetPrice: numeric("target_price", { precision: 18, scale: 8 }).notNull(),
+  status: text("status").notNull().default("open"), // "open" | "triggered" | "cancelled"
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  triggeredAt: timestamp("triggered_at", { withTimezone: true }),
 });
 
 // Admin-managed destination accounts shown to users for a given deposit

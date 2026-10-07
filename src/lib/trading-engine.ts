@@ -16,7 +16,7 @@
 //   of waiting for the next sweep, exactly like a real exchange.
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { holdings, orders, positions, trades, transactions, users } from "@/db/schema";
+import { holdings, orders, positions, priceAlerts, trades, transactions, users } from "@/db/schema";
 import { spotOrderShouldFill, spotOrderFillPrice, positionCloseEvent, realizedPnl, type PendingOrderType } from "@/lib/trading";
 import { marketPrice } from "@/lib/market";
 import { notifyUser } from "@/lib/notify";
@@ -221,6 +221,39 @@ export async function sweepPositions(prices: Record<string, number>, userId?: st
   return closed;
 }
 
+// --- Price alerts: one-shot "notify me when BTC goes above/below $X"
+// triggers, evaluated by the same opportunistic sweep as order fills. ------
+
+export async function sweepPriceAlerts(prices: Record<string, number>, userId?: string): Promise<number> {
+  const symbols = Object.keys(prices);
+  if (symbols.length === 0) return 0;
+  const where = userId
+    ? and(eq(priceAlerts.status, "open"), eq(priceAlerts.userId, userId), inArray(priceAlerts.symbol, symbols))
+    : and(eq(priceAlerts.status, "open"), inArray(priceAlerts.symbol, symbols));
+  const open = await db.select().from(priceAlerts).where(where);
+  let triggered = 0;
+  for (const alert of open) {
+    const price = prices[alert.symbol];
+    if (price == null || price <= 0) continue;
+    const target = Number(alert.targetPrice);
+    const hit = alert.direction === "above" ? price >= target : price <= target;
+    if (!hit) continue;
+    const [updated] = await db.update(priceAlerts)
+      .set({ status: "triggered", triggeredAt: new Date() })
+      .where(and(eq(priceAlerts.id, alert.id), eq(priceAlerts.status, "open")))
+      .returning();
+    if (!updated) continue; // lost a race with another sweep - already handled
+    triggered++;
+    await notifyUser({
+      userId: alert.userId,
+      type: "price_alert_triggered",
+      title: `${alert.symbol} ${alert.direction === "above" ? "crossed above" : "dropped below"} your target`,
+      message: `${alert.symbol} just ${alert.direction === "above" ? "rose above" : "fell below"} ${marketPrice(target)} (now ${marketPrice(price)}). This alert has been used up - set a new one if you want to keep watching ${alert.symbol}.`,
+    });
+  }
+  return triggered;
+}
+
 // Global sweep cooldown, per server instance. Best-effort only: with
 // multiple serverless instances each has its own timer, but combined with
 // the per-user sweep on every /api/app load this keeps fills timely without
@@ -233,7 +266,7 @@ export async function maybeSweepAll(prices: Record<string, number>) {
   if (now - lastGlobalSweep < GLOBAL_SWEEP_COOLDOWN_MS) return;
   lastGlobalSweep = now;
   try {
-    await Promise.all([sweepOrders(prices), sweepPositions(prices)]);
+    await Promise.all([sweepOrders(prices), sweepPositions(prices), sweepPriceAlerts(prices)]);
   } catch (error) {
     console.error("Trading engine sweep failed:", error);
   }
@@ -241,7 +274,7 @@ export async function maybeSweepAll(prices: Record<string, number>) {
 
 export async function sweepForUser(prices: Record<string, number>, userId: string) {
   try {
-    await Promise.all([sweepOrders(prices, userId), sweepPositions(prices, userId)]);
+    await Promise.all([sweepOrders(prices, userId), sweepPositions(prices, userId), sweepPriceAlerts(prices, userId)]);
   } catch (error) {
     console.error("Trading engine per-user sweep failed:", error);
   }

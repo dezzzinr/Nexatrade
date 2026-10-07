@@ -33,6 +33,8 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
   const [savingLanguage, setSavingLanguage] = useState(false);
   const [savingEmailNotifications, setSavingEmailNotifications] = useState(false);
   const [fx, setFx] = useState<{ rate: number; status: string } | null>(null);
+  const [referralCount, setReferralCount] = useState(0);
+  const [referralCopied, setReferralCopied] = useState(false);
 
   const [form, setForm] = useState<Partial<Profile>>({});
   const [savingInfo, setSavingInfo] = useState(false);
@@ -59,6 +61,7 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
           setProfile(result.profile);
           setForm(result.profile);
           setFx(result.fx ?? null);
+          setReferralCount(result.referralCount ?? 0);
         }
       })
       .finally(() => setLoading(false));
@@ -297,12 +300,25 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
           </label>
         </div>
 
+        {!profile.isDemo && <div className="panel">
+          <h3>Your referral code</h3><p className="panel-subtitle">Share this with a friend. When they sign up with it, you both get a $25 trading bonus.</p>
+          {profile.referralCode ? <>
+            <div className="referral-code-box" style={{ marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <span style={{ letterSpacing: 1, fontWeight: 800 }}>{profile.referralCode}</span>
+              <button
+                type="button"
+                className="outline-btn small"
+                onClick={() => { navigator.clipboard?.writeText(profile.referralCode ?? ""); setReferralCopied(true); setTimeout(() => setReferralCopied(false), 1800); }}
+              >{referralCopied ? "Copied!" : "Copy"}</button>
+            </div>
+            <div className="profile-readonly-row"><span>Friends referred</span><span>{referralCount}</span></div>
+          </> : <p className="form-hint">Your code is being generated - refresh this page in a moment.</p>}
+        </div>}
+
         <div className="panel">
-          <h3>Referral &amp; agreements</h3><p className="panel-subtitle">Read-only account record.</p>
-          {profile.referralCode && <div className="referral-code-box" style={{ marginBottom: 12 }}>{profile.referralCode}</div>}
+          <h3>Agreements</h3><p className="panel-subtitle">Read-only account record.</p>
           <div className="profile-readonly-row"><span>Terms &amp; Conditions</span><span>{profile.termsAcceptedAt ? <><Check size={13} style={{ verticalAlign: -2 }} /> Accepted {new Date(profile.termsAcceptedAt).toLocaleDateString()}</> : "Not yet accepted"}</span></div>
           <div className="profile-readonly-row"><span>Privacy Policy</span><span>{profile.privacyAcceptedAt ? <><Check size={13} style={{ verticalAlign: -2 }} /> Accepted {new Date(profile.privacyAcceptedAt).toLocaleDateString()}</> : "Not yet accepted"}</span></div>
-          {!profile.referralCode && <div className="profile-readonly-row"><span>Referral code</span><span>None used</span></div>}
         </div>
 
         <div className="panel">

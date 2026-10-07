@@ -39,10 +39,10 @@ type UserDetail = {
 };
 type Overview = { totalUsers: number; totalCashBalance: string; pendingDeposits: number; pendingWithdrawals: number; activeBotSubscriptions: number; activeCopySubscriptions: number; activePlanSubscriptions: number; restrictedAccounts: number };
 
-type Tab = "overview" | "users" | "deposits" | "withdrawals" | "accounts" | "traders" | "bots" | "plans";
+type Tab = "overview" | "users" | "deposits" | "withdrawals" | "accounts" | "traders" | "bots" | "plans" | "broadcast";
 const navGroups: { label: string; items: { name: Tab; label: string; icon: typeof LayoutDashboard }[] }[] = [
   { label: "OVERVIEW", items: [{ name: "overview", label: "Overview", icon: LayoutDashboard }] },
-  { label: "USERS", items: [{ name: "users", label: "Manage users", icon: UsersRound }] },
+  { label: "USERS", items: [{ name: "users", label: "Manage users", icon: UsersRound }, { name: "broadcast", label: "Broadcast message", icon: Send }] },
   { label: "PAYMENTS", items: [{ name: "deposits", label: "Deposit requests", icon: ArrowDownLeft }, { name: "withdrawals", label: "Withdrawal requests", icon: ArrowUpRight }, { name: "accounts", label: "Deposit destinations", icon: CreditCard }] },
   { label: "CATALOG", items: [{ name: "traders", label: "Copy traders", icon: CopyIcon }, { name: "bots", label: "Trading bots", icon: Bot }, { name: "plans", label: "Plans", icon: Sparkles }] },
 ];
@@ -55,6 +55,7 @@ const tabTitles: Record<Tab, { title: string; description: string }> = {
   traders: { title: "Copy traders", description: "Curate the traders users can subscribe to follow." },
   bots: { title: "Trading bots", description: "Curate the bot strategies users can subscribe to and configure." },
   plans: { title: "Plans", description: "Curate the weekly plans users can subscribe to." },
+  broadcast: { title: "Broadcast message", description: "Send an announcement to every user at once." },
 };
 
 export default function AdminPage() {
@@ -116,6 +117,11 @@ export default function AdminPage() {
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [editPlanForm, setEditPlanForm] = useState(emptyPlanForm);
   const [planBusyId, setPlanBusyId] = useState<string | null>(null);
+
+  // --- Broadcast ---
+  const [broadcastForm, setBroadcastForm] = useState({ title: "", message: "" });
+  const [broadcastSending, setBroadcastSending] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<number | null>(null);
 
   // --- Overview ---
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -552,6 +558,23 @@ export default function AdminPage() {
       setPlanForm(emptyPlanForm);
       await loadPlansAdmin();
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setPlanCreating(false); }
+  };
+  const sendBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (broadcastSending) return;
+    if (broadcastForm.title.trim().length < 2) return notify("Enter a title.", true);
+    if (broadcastForm.message.trim().length < 1) return notify("Enter a message.", true);
+    if (!window.confirm("Send this announcement to every user right now?")) return;
+    setBroadcastSending(true);
+    setBroadcastResult(null);
+    try {
+      const res = await fetch("/api/admin/notifications/broadcast", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(broadcastForm) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Something went wrong");
+      notify(`Broadcast sent to ${result.sent} user${result.sent === 1 ? "" : "s"}.`);
+      setBroadcastResult(result.sent);
+      setBroadcastForm({ title: "", message: "" });
+    } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setBroadcastSending(false); }
   };
   const togglePlanActive = async (p: PlanRow) => {
     setPlanBusyId(p.id);
@@ -1074,6 +1097,20 @@ export default function AdminPage() {
               </div>)}
               {planRows.length === 0 && !plansLoadingAdmin && <div className="empty-state"><span className="empty-icon"><Plus size={27}/></span><h3>No plans yet</h3><p>Add one on the left to let users subscribe.</p></div>}
             </div>
+          </section>
+        </section>}
+
+        {tab === "broadcast" && <section className="admin-accounts-layout">
+          <section className="panel admin-panel">
+            <div className="section-head"><div><h2>Broadcast an announcement</h2><p>Sends an in-app notification (and email, unless the user has email notifications off) to every real user account. Demo accounts are skipped.</p></div></div>
+            <form className="admin-account-form" onSubmit={sendBroadcast}>
+              <label className="input-label">Title</label>
+              <input className="text-input" placeholder="e.g. Scheduled maintenance tonight" value={broadcastForm.title} onChange={e => setBroadcastForm({ ...broadcastForm, title: e.target.value })} maxLength={120}/>
+              <label className="input-label">Message</label>
+              <textarea className="text-input" rows={5} placeholder="Write the announcement body here..." value={broadcastForm.message} onChange={e => setBroadcastForm({ ...broadcastForm, message: e.target.value })} maxLength={2000}/>
+              <button className="primary-btn full-btn" disabled={broadcastSending || !broadcastForm.title.trim() || !broadcastForm.message.trim()}>{broadcastSending ? "Sending..." : "Send to all users"}</button>
+              {broadcastResult && <p style={{ color: "var(--green)", fontSize: 13, marginTop: 4 }}>Sent to {broadcastResult} user{broadcastResult === 1 ? "" : "s"}.</p>}
+            </form>
           </section>
         </section>}
       </main>

@@ -71,6 +71,10 @@ The current market snapshot is available at `/api/market`; chart data at `/api/m
 - Admin-managed subscription plans with paid 7-day (weekly) subscriptions and per-plan feature lists
 - Market observations, and a seed script (`npm run seed`) that populates 10 starter bots and 4 starter plans
 - Full admin user management: create users, view/search every account, edit profiles, lock/suspend/limit accounts, send per-user notifications, place trades on a user's behalf, and directly edit balances (see below)
+- Admin broadcast announcements to every user at once, in-app + email (see below)
+- In-app + email notifications for every notable account/trading event, plus a dedicated paginated/filterable Notifications page (see below)
+- Price alerts ("notify me when BTC crosses $X"), a starred-assets watchlist, CSV export on transaction/trade history tables, and search/filter on history tables (see below)
+- Email-based password reset (alongside the existing security-question flow), and a referral program with auto-generated shareable codes and a signup bonus for both sides (see below)
 - Responsive interface using the NexaTrade blue theme, including a fully mobile-responsive admin panel (sidebar on desktop, hamburger menu on mobile — same pattern as the main dashboard)
 
 **Simulation notice:** Market prices are real provider quotes, but there is no live exchange execution, autonomous bot execution, or automatic trade copying — subscribing to a trading bot or copy trader grants access to configure it / view their published stats for 7 days, it does not execute real trades or mirror real trades. Plan subscriptions are a simulated billing flow and do not enable any live exchange connectivity. Deposits and withdrawals model a real-world manual payment flow — see below.
@@ -217,4 +221,36 @@ Every notable account/trading event - account created, sign-in, password/securit
 
 - `RESEND_API_KEY` (optional) - get a free key at [resend.com](https://resend.com/api-keys). Omit it to keep emails stubbed/logged only.
 - `EMAIL_FROM` (optional) - defaults to `NexaTrade <onboarding@resend.dev>`. On Resend's free tier (no verified domain) this must stay as `onboarding@resend.dev`, and mail can only be received at the address you signed up to Resend with; verify a custom domain in Resend for real multi-user delivery.
-- `APP_URL` (optional) - your deployed URL, used only to build the "Open NexaTrade" button in emails. Auto-detected from Vercel's `VERCEL_URL` when deployed there.
+- `APP_URL` (optional) - your deployed URL, used only to build the "Open NexaTrade" button in emails (and the clickable link in password-reset emails - without it, the email shows a code to paste in instead of a link). Auto-detected from Vercel's `VERCEL_URL` when deployed there.
+
+## Price alerts
+
+The Trade page has a **Price alerts** panel under the order book/position list: pick a direction (above/below) and a target USD price for the asset currently open, and NexaTrade notifies you (in-app + email, same pipeline as everything else) the moment the live quote crosses it. Alerts are one-shot - once triggered they move to history and stop watching; create a new one to keep watching an asset. Evaluation piggybacks on the same opportunistic sweep that already fills orders and liquidates positions (`sweepPriceAlerts` in `src/lib/trading-engine.ts`), so no separate cron/worker is needed. A user can have up to 20 open alerts at a time. API: `GET/POST /api/price-alerts`, `PATCH /api/price-alerts/:id` (cancel).
+
+## Password reset via email
+
+Alongside the existing security-question reset, **Forgot password?** now offers "Email me a reset link instead." This always responds with the same generic message regardless of whether the account/email exists (no user enumeration), and - when a match is found - emails a single-use link that expires in 30 minutes (`users.resetTokenHash`/`resetTokenExpiresAt`, hashed the same way session tokens are). The link opens a standalone `/reset-password?token=...` page (works even if the user isn't logged in anywhere). Resetting a password this way invalidates all existing sessions, exactly like the security-question flow. If `APP_URL` isn't configured, the email includes a plain-text code to paste into the Reset Password page instead of a clickable link.
+
+## Admin broadcast announcements
+
+**Admin panel → Broadcast message** sends a title + message to every real (non-demo) user at once, as an in-app notification (and email, unless that user turned email notifications off) - useful for maintenance windows, new feature announcements, etc. It reuses the existing single-user admin-message notification pipeline, just fanned out to every account. There's a confirmation prompt before sending since it can't be undone. API: `POST /api/admin/notifications/broadcast`.
+
+## Full Notifications page
+
+Beyond the notification bell popover (which still shows the 20 most recent), there's now a dedicated **Notifications** page (in the sidebar, under Account) with the complete history: paginated (20 per page), filterable by category (Trading, Orders, Positions, Deposits, Withdrawals, Price alerts, Referrals, Account, Announcements), with unread items visually distinguished and markable individually or all-at-once. `GET /api/notifications` now accepts `limit`, `offset`, and `type` query params for this; the bell popover keeps using the defaults.
+
+## Watchlist / starred assets
+
+Every asset row on the Markets table and the asset header on the Trade page have a star toggle. Starred assets show up in a dedicated **Watchlist** tab on the Markets page (alongside All assets/Gainers/Losers) for quickly checking on just the coins you care about. Demo/guest users are prompted to create an account before starring (same gate as trading/deposits). API: `GET/POST/DELETE /api/watchlist`.
+
+## CSV export
+
+Transactions, and every tab of Trade History (Trades, Orders, Positions), have an **Export CSV** button that downloads the currently filtered/searched rows as a `.csv` file - entirely client-side (`src/lib/csv.ts`), no server round trip, so it always exports exactly what's on screen.
+
+## Filters & search on history tables
+
+Transactions now has a type filter (All types / deposit / withdrawal / admin_credit / ... ) plus a free-text search box (matches description or type). Trade History's Trades/Orders/Positions tabs share a single symbol search box, plus the existing All/Buy/Sell segmented control for Trades. All filtering happens client-side against data already loaded - no new endpoints needed - so it's instant.
+
+## Referral rewards
+
+Every real (non-demo) account gets its own unique, auto-generated, shareable referral code (`users.referralCode`, 7 characters, e.g. `FFJZY8F`) - shown on the Profile page under "Your referral code" with a one-click copy button and a running count of friends referred. Accounts created before this feature get their code generated the first time they load their Profile page (`GET /api/profile` lazily backfills it). Entering **someone else's** code in the "Referral/Promo Code" field at signup (the same field that existed before but was previously inert) links the two accounts (`users.referredBy`) and credits a flat **$25 bonus** to both the new user and the referrer immediately, each logged as a `referral_bonus` transaction (visible in Transactions) and a notification. Self-referral is impossible since a user's own code can't match their own entry at signup (the lookup happens before the new row exists). The bonus amount is a constant (`REFERRAL_BONUS_AMOUNT` in `src/lib/referrals.ts`) if you want to change it.

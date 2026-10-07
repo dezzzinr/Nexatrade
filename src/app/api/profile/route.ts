@@ -9,6 +9,7 @@ import { countryByCode } from "@/lib/countries";
 import { getFxRate } from "@/lib/fx-server";
 import { isLanguageCode } from "@/lib/i18n";
 import { notifyUser } from "@/lib/notify";
+import { generateReferralCode } from "@/lib/referrals";
 
 export const dynamic = "force-dynamic";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -44,10 +45,21 @@ function publicProfile(user: typeof users.$inferSelect) {
 // so the client can render converted amounts without a second round trip.
 export async function GET(request: NextRequest) {
   try {
-    const user = await getUser(request);
+    let user = await getUser(request);
     if (!user) return bad("Session expired. Please refresh the page.", 401);
-    const fx = await getFxRate(user.currency);
-    return NextResponse.json({ profile: publicProfile(user), fx });
+    // Backfill a shareable referral code for accounts created before the
+    // referral program existed (including seeded/demo accounts don't need
+    // one - demo never persists anyway).
+    if (!user.referralCode && !user.isDemo) {
+      const code = await generateReferralCode();
+      const [updated] = await db.update(users).set({ referralCode: code }).where(eq(users.id, user.id)).returning();
+      user = updated;
+    }
+    const [fx, referralCountRow] = await Promise.all([
+      getFxRate(user.currency),
+      db.select({ count: sql<number>`count(*)::int` }).from(users).where(eq(users.referredBy, user.id)),
+    ]);
+    return NextResponse.json({ profile: publicProfile(user), fx, referralCount: referralCountRow[0]?.count ?? 0 });
   } catch (error) {
     console.error("Profile GET:", error);
     return bad("Unable to load your profile.", 500);

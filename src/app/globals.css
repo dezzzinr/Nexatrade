@@ -137,3 +137,11 @@
 .demo-gate-modal p{color:#8894aa;font-size:12.5px;line-height:1.6;margin:0 0 22px}
 .demo-gate-actions{display:flex;flex-direction:column;gap:10px}
 .demo-gate-actions .primary-btn,.demo-gate-actions .outline-btn{width:100%;height:42px}
+
+/* --- Phase 3 additions: price alerts, watchlist, full notifications page, referrals --- */
+.notification-see-all{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;background:none;border:0;border-top:1px solid var(--line);margin-top:4px;padding:11px 0 2px;color:var(--blue);font-size:11px;font-weight:720}
+.notification-see-all:hover{text-decoration:underline}
+.notifications-page-list{display:flex;flex-direction:column;gap:0;padding:4px 20px 14px}
+.notifications-page-list .notification-item{cursor:default}
+.notifications-page-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.notifications-pagination{display:flex;align-items:center;justify-content:center;gap:14px;padding:14px 20px 20px;color:#8c96aa;font-size:11px}

@@ -1,6 +1,15 @@
-# Applying this update: Notification system (in-app + email)
+# Applying this update: 8 new features (price alerts, referrals, and more)
 
-This zip contains the full NexaTrade project with a **full notification system** added on top of everything delivered previously (trading overhaul, profit targets, user profiles/registration, region-based currency, language selector, tab persistence, demo-account gating). Every notable account/trading event now creates an **in-app notification** (the bell icon) and, for real accounts that opt in, an **email** via Resend. Since I don't have push access to your GitHub repo, apply it manually:
+This zip contains the full NexaTrade project with **8 new features** added on top of everything delivered previously (trading overhaul, user profiles/registration, region-based currency, language selector, demo-account gating, the in-app + email notification system). Since I don't have push access to your GitHub repo, apply it manually:
+
+1. **Price alerts** — "notify me when BTC goes above/below $X"
+2. **Email-based password reset** — alongside the existing security-question flow
+3. **Admin broadcast announcements** — message every user at once
+4. **Full Notifications page** — paginated, filterable history beyond the bell popover
+5. **Watchlist / starred assets** — star any coin, filter Markets down to just those
+6. **CSV export** — on Transactions and every Trade History tab
+7. **Filter/search on history tables** — Transactions and Trade History
+8. **Referral rewards** — auto-generated shareable codes, $25 bonus for both sides
 
 ## 1. Copy the files into your repo
 
@@ -10,7 +19,7 @@ rsync -a --exclude='.git' --exclude='node_modules' --exclude='.env' --exclude='.
 cd /path/to/your/repo
 git status   # review the changes before committing
 git add -A
-git commit -m "Notification system: in-app + email, per-user email toggle"
+git commit -m "Add price alerts, watchlist, CSV export, history filters, referrals, admin broadcast, email password reset, full notifications page"
 git push
 ```
 
@@ -18,33 +27,24 @@ Do **not** overwrite your `.env`.
 
 ## 2. Apply the new database schema
 
-Additive only, nothing destructive:
+Additive only, nothing destructive to existing data:
 
-- `notifications.type` (text, defaults to `"admin_message"` for existing rows) — the event category, used to pick an icon in the bell.
-- `notifications.email_status` / `notifications.email_error` (text, nullable) — outcome of trying to email that notification (`sent` / `failed` / `skipped` / `disabled` / `stubbed` / `null`).
-- `users.email_notifications` (boolean, defaults to `true`) — the per-user "email me about activity" toggle on Profile.
+- `price_alerts` (new table) — one-shot "notify me when `<symbol>` goes above/below `<price>`" alerts.
+- `watchlist_items` (new table) — a user's starred asset symbols, unique per `(user_id, symbol)`.
+- `users.referral_code` — now **unique** (was free text before). Existing rows keep their old value if it happens to still be unique, otherwise this still applies fine since it was rarely populated; every user gets a proper auto-generated code lazily the next time they load their Profile page.
+- `users.referred_by` (uuid, nullable, FK → `users.id`) — who referred this account, if anyone.
+- `users.reset_token_hash` / `users.reset_token_expires_at` (text / timestamp, nullable) — the emailed password-reset flow's single-use token.
 
 ```bash
 npm install
 npx drizzle-kit push
 ```
 
-## 3. (Optional, recommended) Turn on real email
+If `drizzle-kit push` warns about the `referral_code` uniqueness change because of a pre-existing duplicate value in your database (unlikely, since it was free text before and rarely used meaningfully), clear the conflicting values first with `UPDATE users SET referral_code = NULL WHERE referral_code = '...';` and re-run.
 
-Out of the box, email sending is **stubbed**: every email is logged to the server console instead of actually sent, so the whole feature works with zero configuration (in-app notifications always work regardless). To send real emails:
+## 3. Nothing new to configure
 
-1. Create a free account at [resend.com](https://resend.com) and generate an API key.
-2. Add to `.env`:
-   ```
-   RESEND_API_KEY="re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-   ```
-3. That's it — no other code changes needed, it activates automatically.
-
-Two things worth knowing about Resend's **free tier** (no verified custom domain):
-- You must send **from** `onboarding@resend.dev` (the default `EMAIL_FROM` in this project already uses that).
-- You can only **receive** mail at the email address you signed up to Resend with — Resend blocks sending to other addresses until you verify your own domain. For a real multi-user production launch, verify a domain in Resend and set `EMAIL_FROM` to an address on it; then any user's email works.
-
-Optionally also set `APP_URL` (your deployed URL) so notification emails include a working "Open NexaTrade" button; on Vercel this is auto-detected from `VERCEL_URL` if `APP_URL` isn't set.
+All 8 features work out of the box with your existing `.env` — no new required environment variables. Password-reset emails reuse the same `RESEND_API_KEY` / `EMAIL_FROM` / `APP_URL` setup as the rest of the notification system (see the main README's "Notification system" section). Without `APP_URL` set, the reset email includes a short code to paste into the Reset Password page instead of a clickable link — still fully functional.
 
 ## 4. Rebuild and redeploy
 
@@ -52,43 +52,17 @@ Optionally also set `APP_URL` (your deployed URL) so notification emails include
 npm run build
 ```
 
-`npx tsc --noEmit` passes cleanly. `npx eslint .` is clean except for the same handful of pre-existing issues in `src/app/page.tsx` that predate this update (not runtime bugs, previously documented).
+`npx tsc --noEmit` passes cleanly. `npx eslint .` only flags the same pre-existing, non-blocking issues in `src/app/page.tsx` / `src/app/admin/page.tsx` that predate this update (mostly the new Next.js 16 React Compiler lint rules flagging the whole app's existing `useEffect`-based data-fetching pattern — not a regression introduced here, and not a runtime bug).
 
-## 5. What's new
+## 5. Testing it yourself
 
-### In-app notifications (the bell icon)
-Every notable event now creates a notification, each with a distinct icon/color in the bell:
-
-| Event | Example |
-|---|---|
-| Account created, sign-in, password/security question changed | "Welcome to NexaTrade!", "New sign-in to your account" |
-| Trade placed, order placed/filled/cancelled | "Bought BTC", "Limit order placed", "Buy order filled" |
-| Position opened, closed (manual), auto-closed (take-profit/stop-loss/liquidation) | "Opened 5x long BTC position", "Liquidated: BTC position" |
-| Deposit submitted/approved/rejected, withdrawal submitted/approved/rejected | "Deposit approved" |
-| Bot/copy-trader/plan subscribed, and cancelled by an admin | "Subscribed to BTC DCA Starter" |
-| Admin credits/debits your balance, or changes your account status | "Balance credited", "Your account status changed" |
-| A direct message from an admin (existing feature, now also emailed) | whatever the admin writes |
-
-### Email notifications
-- Every one of the events above is also emailed — **except** two purely self-initiated actions the user already saw confirmed on screen (cancelling your own order, manually closing your own position), which stay in-app only to avoid noise.
-- **Every sign-in always emails**, by design — a security-relevant event users should know about even if they don't check the app.
-- Emails are sent via **Resend**, with a clean branded HTML template shared across every event type (`src/lib/email-server.ts`).
-- Sending is **deferred** using Next.js's `after()` so it never slows down the request that triggered it — important since position liquidations/order fills can notify *other* users in the background while someone else's page is loading.
-- Skipped automatically for: demo accounts (no email on file), accounts with no email, and any user who has turned the toggle off (see below).
-
-### Per-user email toggle (Profile → Notifications)
-- A single on/off switch: "Email me about account activity." In-app notifications in the bell can never be turned off (so there's always a full activity record), but email is optional and defaults to **on**.
-- This is deliberately a simple toggle, not granular per-category preferences — flip it off and every email stops; flip it on and all future notable events are emailed again.
-
-## 6. Testing it yourself
-
-1. **Register** a new account — confirm a "Welcome to NexaTrade!" notification appears in the bell, and (with `RESEND_API_KEY` set) an email arrives.
-2. **Log out and log back in** — confirm a "New sign-in" notification + email fires every time.
-3. **Place a trade, a limit order, open a leveraged position** — confirm each creates its own distinct notification with the right icon.
-4. **Cancel an order / manually close a position** — confirm these show up in the bell but do *not* attempt an email (check the server console / database `email_status` column, which should be `null` for these two types).
-5. **Submit a deposit or withdrawal, then approve/reject it from the admin panel** — confirm the submitter gets notified at each step, not the admin.
-6. **Subscribe to a bot/copy trader/plan, then cancel it from Admin → Users → that user's subscriptions** — confirm both the subscribe and the cancel notify the user, with the right product name.
-7. **Toggle "Email me about account activity" off on Profile**, then trigger any event — confirm it still appears in the bell but the database's `notifications.email_status` is `disabled` instead of `sent`/`stubbed`.
-8. Without `RESEND_API_KEY` set, confirm the server console logs `[email:stub] ...` lines instead of errors, and the app keeps working normally end to end.
+1. **Price alerts** — on the Trade page, scroll to "Price alerts," create one with a target price near the current live price, then reload any page a few times (the sweep runs opportunistically on normal traffic). Confirm it moves to "triggered" and you get a bell notification + email.
+2. **Password reset** — from the sign-in modal, click "Forgot password?" → "Email me a reset link instead," enter your email, then (without `RESEND_API_KEY` set) check the server console for a `[password-reset:stub] token for ...` line, and open `/reset-password?token=<that token>` to set a new password. Confirm the old password no longer works and all sessions were logged out.
+3. **Admin broadcast** — as an admin, go to `/admin` → Broadcast message, send an announcement, and confirm every other real user (not demo accounts) gets it in their bell + email.
+4. **Notifications page** — click "Notifications" in the sidebar, confirm pagination and the category filter dropdown both work, and that clicking an unread one marks it read.
+5. **Watchlist** — star a coin from the Markets table or the Trade page's asset header, then switch to the Markets page's "Watchlist" tab and confirm only starred coins show up.
+6. **CSV export** — on Transactions and each Trade History tab, apply a search/filter, click "Export CSV," and confirm the downloaded file matches exactly what's on screen.
+7. **Filters/search** — type into the search boxes on Transactions and Trade History and confirm the tables narrow down live, with no page reload.
+8. **Referrals** — register a new account, go to Profile, confirm "Your referral code" shows a freshly generated code. Register a second account entering that code in "Referral/Promo Code" at signup. Confirm both accounts got a $25 `referral_bonus` transaction and a notification, and the referrer's Profile page shows "Friends referred: 1".
 
 No real money, card data, or payment processor is involved anywhere in this app — it remains a paper-trading simulation, as before.
