@@ -32,6 +32,10 @@ export async function GET(request: NextRequest) {
         riskLevel: p.riskLevel,
         minAllocation: p.minAllocation,
         subscriptionAmount: p.subscriptionAmount,
+        subscriptionDurationDays: p.subscriptionDurationDays,
+        rating: p.rating,
+        country: p.country,
+        photoUrl: p.photoUrl,
         activeSubscribers: subscriberCounts.get(p.id) ?? 0,
         mySubscription: mine ? { expiresAt: mine.expiresAt, amount: mine.amount } : null,
       };

@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BadgeCheck, Check, CircleHelp, KeyRound, Lock, UploadCloud, UserRound } from "lucide-react";
+import { BadgeCheck, Check, CircleHelp, KeyRound, Lock, Moon, Sun, UploadCloud, UserRound } from "lucide-react";
 import { COUNTRIES, currencyForCountry } from "@/lib/countries";
 import { GENDERS, genderLabel } from "@/lib/profile";
 import { LANGUAGES, type LanguageCode } from "@/lib/i18n";
 import { useLanguage } from "@/components/i18n-provider";
+import { useConfirm } from "@/components/confirm-provider";
+import { useTheme } from "@/components/theme-provider";
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -28,6 +30,8 @@ type Props = {
 
 export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }: Props) {
   const { setLanguage } = useLanguage();
+  const { theme, setTheme } = useTheme();
+  const confirm = useConfirm();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingLanguage, setSavingLanguage] = useState(false);
@@ -78,6 +82,7 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
   const saveInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile) return;
+    if (!(await confirm({ title: "Save profile changes?" }))) return;
     setSavingInfo(true);
     try {
       const result = await patch({
@@ -166,6 +171,7 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
   };
 
   const removePhoto = async () => {
+    if (!(await confirm({ title: "Remove your profile photo?" }))) return;
     setPhotoBusy(true);
     try {
       const result = await patch({ action: "updateProfile", profilePhoto: null });
@@ -183,6 +189,7 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
     e.preventDefault();
     if (newPassword.length < 8) return notify("New password must be at least 8 characters.", true);
     if (newPassword !== confirmNewPassword) return notify("New password and confirmation do not match.", true);
+    if (!(await confirm({ title: "Change your password?", message: "You'll need your new password the next time you sign in." }))) return;
     setPasswordSaving(true);
     try {
       await patch({ action: "changePassword", currentPassword, newPassword, confirmPassword: confirmNewPassword });
@@ -198,6 +205,7 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
   const saveSecurity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!secQuestion.trim() || !secAnswer.trim()) return notify("Enter both a question and an answer.", true);
+    if (!(await confirm({ title: "Save this security question?" }))) return;
     setSecuritySaving(true);
     try {
       await patch({ action: "updateSecurity", currentPassword: secCurrentPassword, securityQuestion: secQuestion, securityAnswer: secAnswer });
@@ -283,6 +291,17 @@ export default function ProfilePage({ onRequireAuth, onProfileUpdated, notify }:
         <div className="panel">
           <h3>Display language</h3><p className="panel-subtitle">Translates the app&apos;s menus, buttons, and headings. Market data and numbers are unaffected.</p>
           <div className="select-wrap"><select data-testid="language-select" value={form.language ?? "en"} disabled={savingLanguage} onChange={(e) => { setForm({ ...form, language: e.target.value }); void saveLanguage(e.target.value); }}>{LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.flag} {l.nativeLabel}</option>)}</select></div>
+        </div>
+
+        <div className="panel">
+          <h3>Appearance</h3><p className="panel-subtitle">Choose how Nexatrade looks on this device. Saved locally, so other devices keep their own preference.</p>
+          <div className="theme-row" style={{ padding: 0 }}>
+            <div className="theme-row-label"><strong>Theme</strong><span>{theme === "dark" ? "Dark mode is on" : "Light mode is on"}</span></div>
+            <div className="theme-switch" data-testid="theme-switch">
+              <button type="button" className={theme === "light" ? "active" : ""} aria-label="Light mode" title="Light mode" onClick={() => setTheme("light")}><Sun size={16}/></button>
+              <button type="button" className={theme === "dark" ? "active" : ""} aria-label="Dark mode" title="Dark mode" onClick={() => setTheme("dark")}><Moon size={16}/></button>
+            </div>
+          </div>
         </div>
 
         <div className="panel">

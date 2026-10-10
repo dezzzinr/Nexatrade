@@ -116,7 +116,7 @@ export default function RegisterModal({ onClose, onSwitchToLogin, onRegistered }
         <button className="modal-close" onClick={onClose} aria-label="Close"><X size={20} /></button>
         <div className="modal-brand"><div className="brand-icon"><UserRound size={20} strokeWidth={3} /></div>{t("Create your account")}</div>
         <h2>{t("Join NexaTrade")}</h2>
-        <p>{t("Your trading journey starts here. Get $10,000 in paper funds to explore. Fields marked * are required.")}</p>
+        <p>{t("Your trading journey starts here. Deposit paper funds anytime to start trading. Fields marked * are required.")}</p>
 
         <form onSubmit={submit}>
           <div className="form-section">

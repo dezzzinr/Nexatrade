@@ -1,6 +1,6 @@
-# Applying this update: 8 new features (price alerts, referrals, and more)
+# Applying this update: 8 new features, confirm-before-acting, and $0 starting balance
 
-This zip contains the full NexaTrade project with **8 new features** added on top of everything delivered previously (trading overhaul, user profiles/registration, region-based currency, language selector, demo-account gating, the in-app + email notification system). Since I don't have push access to your GitHub repo, apply it manually:
+This zip contains the full NexaTrade project with **8 new features**, a global **confirmation dialog before mutating actions**, and a change to **new accounts starting at $0**, all added on top of everything delivered previously (trading overhaul, user profiles/registration, region-based currency, language selector, demo-account gating, the in-app + email notification system). Since I don't have push access to your GitHub repo, apply it manually:
 
 1. **Price alerts** — "notify me when BTC goes above/below $X"
 2. **Email-based password reset** — alongside the existing security-question flow
@@ -10,6 +10,8 @@ This zip contains the full NexaTrade project with **8 new features** added on to
 6. **CSV export** — on Transactions and every Trade History tab
 7. **Filter/search on history tables** — Transactions and Trade History
 8. **Referral rewards** — auto-generated shareable codes, $25 bonus for both sides
+9. **Confirmation prompts** — a styled "Are you sure?" dialog before nearly every mutating action, in both the main app and the admin panel (see the README's "Confirmation prompts before mutating actions" section for the exact scope)
+10. **New accounts start at $0** — real signups no longer get a pre-loaded $10,000; they deposit or earn a referral bonus to fund their balance. The demo/guest workspace is unchanged.
 
 ## 1. Copy the files into your repo
 
@@ -64,5 +66,7 @@ npm run build
 6. **CSV export** — on Transactions and each Trade History tab, apply a search/filter, click "Export CSV," and confirm the downloaded file matches exactly what's on screen.
 7. **Filters/search** — type into the search boxes on Transactions and Trade History and confirm the tables narrow down live, with no page reload.
 8. **Referrals** — register a new account, go to Profile, confirm "Your referral code" shows a freshly generated code. Register a second account entering that code in "Referral/Promo Code" at signup. Confirm both accounts got a $25 `referral_bonus` transaction and a notification, and the referrer's Profile page shows "Friends referred: 1".
+9. **Confirmation prompts** — try a handful of actions spread across the app (place a trade, cancel an order, star a coin, sign out, save your profile, delete a bot in the admin panel) and confirm a dialog appears each time asking you to confirm, with a Cancel option that backs out without doing anything.
+10. **$0 starting balance** — register a brand-new account (not using a referral code) and confirm its balance is $0.00 and it shows up as $0 everywhere (topbar, Overview, Trade). Then open the app as a guest (no login) and confirm the demo workspace still shows its usual pre-loaded balance and sample portfolio, unaffected.
 
 No real money, card data, or payment processor is involved anywhere in this app — it remains a paper-trading simulation, as before.

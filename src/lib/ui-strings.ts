@@ -67,7 +67,7 @@ export const UI_STRINGS: string[] = [
   "Trade history", "Review every spot trade, order, and leveraged position in your paper-trading account.",
   // Registration modal
   "Create your account", "Join NexaTrade",
-  "Your trading journey starts here. Get $10,000 in paper funds to explore. Fields marked * are required.",
+  "Your trading journey starts here. Deposit paper funds anytime to start trading. Fields marked * are required.",
   "Prefer not to specify", "Select your country", "Optional",
   "Your balances will display in", "by default — you can change this later in your profile.",
   "Replace photo", "Upload photo", "Remove",

@@ -4,6 +4,8 @@
 // price from their paper-trading cash balance.
 
 export { SUBSCRIPTION_DAYS, SUBSCRIPTION_MS } from "@/lib/subscriptions";
+export { SUBSCRIPTION_DURATION_OPTIONS, type SubscriptionDurationDays } from "@/lib/catalog-profile";
+import { validateProfileFields } from "@/lib/catalog-profile";
 
 export const AVATAR_COLORS = ["blue", "purple", "orange", "pink", "green", "red"] as const;
 export type AvatarColor = (typeof AVATAR_COLORS)[number];
@@ -47,6 +49,11 @@ export function validateTraderFields(body: Record<string, unknown>, partial: boo
     if (focus.length < 1 || focus.length > 120) return { error: "Focus must be between 1 and 120 characters." };
     updates.focus = focus;
   }
+  if (!partial || body.bio !== undefined) {
+    const bio = String(body.bio ?? "").trim();
+    if (bio.length < 1 || bio.length > 200) return { error: "Bio must be between 1 and 200 characters." };
+    updates.bio = bio;
+  }
   if (!partial || body.riskLevel !== undefined) {
     const riskLevel = String(body.riskLevel ?? "Moderate");
     if (!RISK_LEVELS.includes(riskLevel as RiskLevel)) return { error: "Choose a valid risk level." };
@@ -68,6 +75,8 @@ export function validateTraderFields(body: Record<string, unknown>, partial: boo
     updates.subscriptionAmount = subscriptionAmount.toFixed(2);
   }
   if (typeof body.isActive === "boolean") updates.isActive = body.isActive;
-  return { updates };
+  const profile = validateProfileFields(body, partial);
+  if (profile.error !== undefined) return { error: profile.error };
+  return { updates: { ...updates, ...profile.updates } };
 }
 

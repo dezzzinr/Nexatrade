@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, AlertTriangle, ArrowDownLeft, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowUpRight, Bell, Bot, Check, ChevronDown, ChevronRight, Clock3, Copy as CopyIcon, CreditCard, History, LayoutDashboard, LockKeyhole, Menu, Pencil, Plus, RefreshCw, Search, Send, ShieldAlert, ShieldCheck, Sparkles, Trash2, UserPlus, UserRound, UsersRound, Wallet, X } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDownLeft, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowUpRight, Bell, Bot, Check, ChevronDown, ChevronRight, Clock3, Copy as CopyIcon, CreditCard, History, LayoutDashboard, LockKeyhole, Menu, Moon, Pencil, Plus, RefreshCw, Search, Send, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, UserPlus, UserRound, UsersRound, Wallet, X } from "lucide-react";
 import { DEPOSIT_METHODS, depositMethodLabel, type DepositMethod } from "@/lib/deposits";
 import { withdrawalMethodLabel } from "@/lib/withdrawals";
-import { AVATAR_COLORS, RISK_LEVELS, type AvatarColor, type RiskLevel } from "@/lib/copy-trading";
+import { AVATAR_COLORS, RISK_LEVELS, SUBSCRIPTION_DURATION_OPTIONS, type AvatarColor, type RiskLevel } from "@/lib/copy-trading";
 import { BOT_STRATEGIES, type BotStrategy } from "@/lib/bots";
+import { COUNTRIES, DEFAULT_COUNTRY, flagEmoji } from "@/lib/countries";
 import { assets as catalogAssets } from "@/lib/market";
 import { ACCOUNT_STATUSES, accountStatusLabel, type AccountStatus } from "@/lib/accounts";
+import { ConfirmProvider, useConfirm } from "@/components/confirm-provider";
+import { ThemeProvider, useTheme } from "@/components/theme-provider";
 
 type AdminUser = { id: string; name: string; email: string | null };
 type DepositRequestRow = {
@@ -21,8 +24,8 @@ type WithdrawalRequestRow = {
   userId: string; userName: string; userEmail: string | null;
 };
 type DepositAccountRow = { id: string; method: string; label: string; instructions: string; isActive: boolean; createdAt: string; updatedAt: string };
-type CopyTraderRow = { id: string; name: string; handle: string; avatarInitials: string; avatarColor: string; focus: string; riskLevel: string; returnPercent: string; winRate: string; subscriptionAmount: string; isActive: boolean; activeSubscribers: number; createdAt: string };
-type BotProductRow = { id: string; name: string; description: string; strategy: string; riskLevel: string; minAllocation: string; subscriptionAmount: string; isActive: boolean; activeSubscribers: number; createdAt: string };
+type CopyTraderRow = { id: string; name: string; handle: string; avatarInitials: string; avatarColor: string; focus: string; bio: string; riskLevel: string; returnPercent: string; winRate: string; subscriptionAmount: string; subscriptionDurationDays: number; rating: string; country: string; photoUrl: string | null; isActive: boolean; activeSubscribers: number; createdAt: string };
+type BotProductRow = { id: string; name: string; description: string; strategy: string; riskLevel: string; minAllocation: string; subscriptionAmount: string; subscriptionDurationDays: number; rating: string; country: string; photoUrl: string | null; isActive: boolean; activeSubscribers: number; createdAt: string };
 type PlanRow = { id: string; name: string; description: string; priceWeekly: string; features: string[]; isFeatured: boolean; sortOrder: string; isActive: boolean; activeSubscribers: number; createdAt: string };
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -59,6 +62,12 @@ const tabTitles: Record<Tab, { title: string; description: string }> = {
 };
 
 export default function AdminPage() {
+  return <ThemeProvider><ConfirmProvider><AdminPageInner /></ConfirmProvider></ThemeProvider>;
+}
+
+function AdminPageInner() {
+  const confirm = useConfirm();
+  const { theme, toggleTheme } = useTheme();
   const [admin, setAdmin] = useState<AdminUser | null>(null);
   const [authState, setAuthState] = useState<"loading" | "denied" | "ok">("loading");
   const [tab, setTab] = useState<Tab>("overview");
@@ -94,7 +103,7 @@ export default function AdminPage() {
   const [traders, setTraders] = useState<CopyTraderRow[]>([]);
   const [tradersLoading, setTradersLoading] = useState(false);
   const [traderCreating, setTraderCreating] = useState(false);
-  const emptyTraderForm = { name: "", handle: "", avatarColor: "blue" as AvatarColor, focus: "", riskLevel: "Moderate" as RiskLevel, returnPercent: "", winRate: "", subscriptionAmount: "" };
+  const emptyTraderForm = { name: "", handle: "", avatarColor: "blue" as AvatarColor, focus: "", bio: "", riskLevel: "Moderate" as RiskLevel, returnPercent: "", winRate: "", subscriptionAmount: "", subscriptionDurationDays: "7", rating: "4.8", country: DEFAULT_COUNTRY, photoUrl: "" };
   const [traderForm, setTraderForm] = useState(emptyTraderForm);
   const [editingTraderId, setEditingTraderId] = useState<string | null>(null);
   const [editTraderForm, setEditTraderForm] = useState(emptyTraderForm);
@@ -103,7 +112,7 @@ export default function AdminPage() {
   const [botRows, setBotRows] = useState<BotProductRow[]>([]);
   const [botsLoading, setBotsLoading] = useState(false);
   const [botCreating, setBotCreating] = useState(false);
-  const emptyBotForm = { name: "", description: "", strategy: "DCA" as BotStrategy, riskLevel: "Moderate" as RiskLevel, minAllocation: "", subscriptionAmount: "" };
+  const emptyBotForm = { name: "", description: "", strategy: "DCA" as BotStrategy, riskLevel: "Moderate" as RiskLevel, minAllocation: "", subscriptionAmount: "", subscriptionDurationDays: "7", rating: "4.8", country: DEFAULT_COUNTRY, photoUrl: "" };
   const [botForm, setBotForm] = useState(emptyBotForm);
   const [editingBotId, setEditingBotId] = useState<string | null>(null);
   const [editBotForm, setEditBotForm] = useState(emptyBotForm);
@@ -200,6 +209,7 @@ export default function AdminPage() {
     if (createUserForm.name.trim().length < 2) return notify("Enter the user's name.", true);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(createUserForm.email.trim())) return notify("Enter a valid email address.", true);
     if (createUserForm.password.length < 8) return notify("Password must be at least 8 characters.", true);
+    if (!(await confirm({ title: "Create this user?", message: `Creates an account for ${createUserForm.name.trim()} (${createUserForm.email.trim()}).` }))) return;
     setCreateUserBusy(true);
     try {
       const res = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(createUserForm) });
@@ -215,6 +225,7 @@ export default function AdminPage() {
   const saveUserProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUserId || editUserBusy) return;
+    if (!(await confirm({ title: "Save this user's profile changes?" }))) return;
     setEditUserBusy(true);
     try {
       const res = await fetch(`/api/admin/users/${selectedUserId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editUserForm) });
@@ -228,6 +239,7 @@ export default function AdminPage() {
   const saveUserStatus = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUserId || statusBusy) return;
+    if (!(await confirm({ title: `Set account standing to "${accountStatusLabel(statusForm.accountStatus as AccountStatus)}"?`, message: statusForm.accountStatus === "locked" ? "The user will be signed out immediately and unable to log back in until you change this." : undefined, danger: statusForm.accountStatus === "locked" || statusForm.accountStatus === "suspended" }))) return;
     setStatusBusy(true);
     try {
       const res = await fetch(`/api/admin/users/${selectedUserId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountStatus: statusForm.accountStatus, maxTradeAmount: statusForm.maxTradeAmount === "" ? null : statusForm.maxTradeAmount, withdrawalsBlocked: statusForm.withdrawalsBlocked, statusReason: statusForm.statusReason || null }) });
@@ -243,6 +255,7 @@ export default function AdminPage() {
     if (!selectedUserId || balanceBusy) return;
     const newBalance = Number(balanceForm.newBalance);
     if (!Number.isFinite(newBalance) || newBalance < 0) return notify("Enter a valid balance.", true);
+    if (!(await confirm({ title: "Set this user's balance?", message: `This directly sets their cash balance to ${money(newBalance)} and logs the difference as an admin credit/debit.`, confirmLabel: "Set balance", danger: true }))) return;
     setBalanceBusy(true);
     try {
       const res = await fetch(`/api/admin/users/${selectedUserId}/balance`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ newBalance, note: balanceForm.note }) });
@@ -259,6 +272,7 @@ export default function AdminPage() {
     if (!selectedUserId || notifBusy) return;
     if (notifForm.title.trim().length < 2) return notify("Enter a title.", true);
     if (notifForm.message.trim().length < 2) return notify("Enter a message.", true);
+    if (!(await confirm({ title: "Send this notification?", message: "The user will see it in their notification bell and, if they have email notifications on, get an email." }))) return;
     setNotifBusy(true);
     try {
       const res = await fetch(`/api/admin/users/${selectedUserId}/notifications`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(notifForm) });
@@ -275,6 +289,7 @@ export default function AdminPage() {
     if (!selectedUserId || manualTradeBusy) return;
     const quantity = Number(manualTradeForm.quantity);
     if (!quantity || quantity <= 0) return notify("Enter a valid quantity.", true);
+    if (!(await confirm({ title: `Place this ${manualTradeForm.side} trade for the user?`, message: `${manualTradeForm.side === "buy" ? "Buy" : "Sell"} ${quantity} ${manualTradeForm.symbol} on their behalf${manualTradeForm.price ? ` at $${manualTradeForm.price}` : " at the live market price"}.`, confirmLabel: "Place trade", danger: true }))) return;
     setManualTradeBusy(true);
     try {
       const res = await fetch(`/api/admin/users/${selectedUserId}/trades`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: manualTradeForm.symbol, side: manualTradeForm.side, quantity, price: manualTradeForm.price || undefined, note: manualTradeForm.note }) });
@@ -287,7 +302,8 @@ export default function AdminPage() {
   };
 
   const cancelSubscription = async (kind: "bot" | "copy" | "plan", id: string) => {
-    if (!selectedUserId || subBusyId || !window.confirm("End this subscription now?")) return;
+    if (!selectedUserId || subBusyId) return;
+    if (!(await confirm({ title: "End this subscription now?", confirmLabel: "End subscription", danger: true }))) return;
     setSubBusyId(id);
     try {
       const res = await fetch(`/api/admin/subscriptions/${kind}/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "cancel" }) });
@@ -330,6 +346,7 @@ export default function AdminPage() {
   useEffect(() => { if (authState === "ok" && tab === "accounts") void loadAccounts(); }, [authState, tab]);
 
   const review = async (id: string, action: "approve" | "reject", adminNote?: string) => {
+    if (action === "approve" && !(await confirm({ title: "Approve and credit this deposit?", message: "This immediately adds the claimed amount to the user's balance." }))) return;
     setBusyId(id);
     try {
       const res = await fetch(`/api/admin/deposits/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, adminNote }) });
@@ -355,6 +372,7 @@ export default function AdminPage() {
   useEffect(() => { if (authState === "ok" && tab === "withdrawals") void loadWithdrawalRequests(wStatusFilter); }, [authState, tab, wStatusFilter]);
 
   const reviewWithdrawal = async (id: string, action: "approve" | "reject", adminNote?: string) => {
+    if (action === "approve" && !(await confirm({ title: "Approve this withdrawal?", message: "Only confirm once you've actually sent the payout to the user's destination yourself - this just finalizes the record." }))) return;
     setWBusyId(id);
     try {
       const res = await fetch(`/api/admin/withdrawals/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, adminNote }) });
@@ -372,6 +390,7 @@ export default function AdminPage() {
     if (creating) return;
     if (newLabel.trim().length < 2) return notify("Enter a label for this destination.", true);
     if (newInstructions.trim().length < 2) return notify("Enter the account details users should send funds to.", true);
+    if (!(await confirm({ title: "Add this deposit destination?", message: "It becomes visible to every user depositing with this method." }))) return;
     setCreating(true);
     try {
       const res = await fetch("/api/admin/deposit-accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method: newMethod, label: newLabel, instructions: newInstructions }) });
@@ -383,6 +402,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setCreating(false); }
   };
   const toggleActive = async (account: DepositAccountRow) => {
+    if (!(await confirm({ title: account.isActive ? "Deactivate this destination?" : "Activate this destination?" }))) return;
     try {
       const res = await fetch(`/api/admin/deposit-accounts/${account.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !account.isActive }) });
       const result = await res.json();
@@ -391,6 +411,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); }
   };
   const saveEdit = async (id: string) => {
+    if (!(await confirm({ title: "Save changes to this destination?" }))) return;
     try {
       const res = await fetch(`/api/admin/deposit-accounts/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: editLabel, instructions: editInstructions }) });
       const result = await res.json();
@@ -401,7 +422,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); }
   };
   const removeAccount = async (id: string) => {
-    if (!window.confirm("Delete this deposit destination? Past deposit requests keep a record of what was shown at the time.")) return;
+    if (!(await confirm({ title: "Delete this deposit destination?", message: "Past deposit requests keep a record of what was shown at the time.", confirmLabel: "Delete", danger: true }))) return;
     try {
       const res = await fetch(`/api/admin/deposit-accounts/${id}`, { method: "DELETE" });
       const result = await res.json();
@@ -428,7 +449,9 @@ export default function AdminPage() {
     if (traderForm.name.trim().length < 2) return notify("Enter the trader's name.", true);
     if (traderForm.handle.trim().length < 2) return notify("Enter a handle, e.g. @alex.trades.", true);
     if (traderForm.focus.trim().length < 1) return notify("Enter the trader's focus, e.g. BTC, ETH.", true);
+    if (traderForm.bio.trim().length < 1) return notify("Enter a short bio for the trader.", true);
     if (!traderForm.subscriptionAmount || Number(traderForm.subscriptionAmount) < 0) return notify("Enter a valid subscription price (0 or more).", true);
+    if (!(await confirm({ title: "Add this trader to the roster?" }))) return;
     setTraderCreating(true);
     try {
       const res = await fetch("/api/admin/copy-traders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(traderForm) });
@@ -440,6 +463,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setTraderCreating(false); }
   };
   const toggleTraderActive = async (t: CopyTraderRow) => {
+    if (!(await confirm({ title: t.isActive ? `Deactivate ${t.name}?` : `Activate ${t.name}?` }))) return;
     setTraderBusyId(t.id);
     try {
       const res = await fetch(`/api/admin/copy-traders/${t.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !t.isActive }) });
@@ -449,6 +473,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setTraderBusyId(null); }
   };
   const saveTraderEdit = async (id: string) => {
+    if (!(await confirm({ title: "Save changes to this trader?" }))) return;
     setTraderBusyId(id);
     try {
       const res = await fetch(`/api/admin/copy-traders/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editTraderForm) });
@@ -460,7 +485,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setTraderBusyId(null); }
   };
   const removeTrader = async (t: CopyTraderRow) => {
-    if (!window.confirm(`Delete ${t.name} from the roster? This only works if they have no subscription history.`)) return;
+    if (!(await confirm({ title: `Delete ${t.name} from the roster?`, message: "This only works if they have no subscription history.", confirmLabel: "Delete", danger: true }))) return;
     setTraderBusyId(t.id);
     try {
       const res = await fetch(`/api/admin/copy-traders/${t.id}`, { method: "DELETE" });
@@ -489,6 +514,7 @@ export default function AdminPage() {
     if (botForm.description.trim().length < 1) return notify("Enter a short description.", true);
     if (!botForm.minAllocation || Number(botForm.minAllocation) < 0) return notify("Enter a valid minimum allocation.", true);
     if (!botForm.subscriptionAmount || Number(botForm.subscriptionAmount) < 0) return notify("Enter a valid subscription price (0 or more).", true);
+    if (!(await confirm({ title: "Add this bot to the catalog?" }))) return;
     setBotCreating(true);
     try {
       const res = await fetch("/api/admin/bots", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(botForm) });
@@ -500,6 +526,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setBotCreating(false); }
   };
   const toggleBotActive = async (b: BotProductRow) => {
+    if (!(await confirm({ title: b.isActive ? `Deactivate ${b.name}?` : `Activate ${b.name}?` }))) return;
     setBotBusyId(b.id);
     try {
       const res = await fetch(`/api/admin/bots/${b.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !b.isActive }) });
@@ -509,6 +536,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setBotBusyId(null); }
   };
   const saveBotEdit = async (id: string) => {
+    if (!(await confirm({ title: "Save changes to this bot?" }))) return;
     setBotBusyId(id);
     try {
       const res = await fetch(`/api/admin/bots/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editBotForm) });
@@ -520,7 +548,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setBotBusyId(null); }
   };
   const removeBot = async (b: BotProductRow) => {
-    if (!window.confirm(`Delete ${b.name} from the catalog? This only works if it has no subscription history.`)) return;
+    if (!(await confirm({ title: `Delete ${b.name} from the catalog?`, message: "This only works if it has no subscription history.", confirmLabel: "Delete", danger: true }))) return;
     setBotBusyId(b.id);
     try {
       const res = await fetch(`/api/admin/bots/${b.id}`, { method: "DELETE" });
@@ -549,6 +577,7 @@ export default function AdminPage() {
     if (planForm.description.trim().length < 1) return notify("Enter a short description.", true);
     if (!planForm.priceWeekly || Number(planForm.priceWeekly) < 0) return notify("Enter a valid weekly price (0 or more).", true);
     if (planForm.features.trim().length < 1) return notify("List at least one feature (one per line).", true);
+    if (!(await confirm({ title: "Add this plan to the catalog?" }))) return;
     setPlanCreating(true);
     try {
       const res = await fetch("/api/admin/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(planForm) });
@@ -564,7 +593,7 @@ export default function AdminPage() {
     if (broadcastSending) return;
     if (broadcastForm.title.trim().length < 2) return notify("Enter a title.", true);
     if (broadcastForm.message.trim().length < 1) return notify("Enter a message.", true);
-    if (!window.confirm("Send this announcement to every user right now?")) return;
+    if (!(await confirm({ title: "Send this announcement to every user right now?", message: "This goes out immediately to every real (non-demo) account, in-app and by email.", confirmLabel: "Send broadcast", danger: true }))) return;
     setBroadcastSending(true);
     setBroadcastResult(null);
     try {
@@ -577,6 +606,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setBroadcastSending(false); }
   };
   const togglePlanActive = async (p: PlanRow) => {
+    if (!(await confirm({ title: p.isActive ? `Deactivate ${p.name}?` : `Activate ${p.name}?` }))) return;
     setPlanBusyId(p.id);
     try {
       const res = await fetch(`/api/admin/plans/${p.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !p.isActive }) });
@@ -586,6 +616,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setPlanBusyId(null); }
   };
   const savePlanEdit = async (id: string) => {
+    if (!(await confirm({ title: "Save changes to this plan?" }))) return;
     setPlanBusyId(id);
     try {
       const res = await fetch(`/api/admin/plans/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editPlanForm) });
@@ -597,7 +628,7 @@ export default function AdminPage() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setPlanBusyId(null); }
   };
   const removePlan = async (p: PlanRow) => {
-    if (!window.confirm(`Delete ${p.name} from the catalog? This only works if it has no subscription history.`)) return;
+    if (!(await confirm({ title: `Delete ${p.name} from the catalog?`, message: "This only works if it has no subscription history.", confirmLabel: "Delete", danger: true }))) return;
     setPlanBusyId(p.id);
     try {
       const res = await fetch(`/api/admin/plans/${p.id}`, { method: "DELETE" });
@@ -633,7 +664,7 @@ export default function AdminPage() {
     <div className="main-shell">
       <header className="topbar">
         <div className="topbar-left"><button className="icon-btn menu-btn" onClick={() => setMobileMenu(true)} aria-label="Open menu"><Menu size={22}/></button><div className="breadcrumb">Admin <ChevronRight size={15}/> <strong>{active.title}</strong></div></div>
-        <div className="topbar-right"><span className="admin-whoami"><ShieldCheck size={15}/> {admin?.name} · Admin</span><a href="/" className="outline-btn small"><ArrowLeft size={14}/> Exit to app</a></div>
+        <div className="topbar-right"><button className="theme-toggle" aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} onClick={toggleTheme}>{theme === "dark" ? <Sun size={19}/> : <Moon size={19}/>}</button><span className="admin-whoami"><ShieldCheck size={15}/> {admin?.name} · Admin</span><a href="/" className="outline-btn small"><ArrowLeft size={14}/> Exit to app</a></div>
       </header>
       <main className="admin-content">
         <div className="page-heading"><div><div className="eyebrow">ADMIN PANEL</div><h1>{active.title}</h1><p>{active.description}</p></div></div>
@@ -956,7 +987,7 @@ export default function AdminPage() {
 
         {tab === "traders" && <section className="admin-accounts-layout">
           <section className="panel admin-panel">
-            <div className="section-head"><div><h2>Add a copy trader</h2><p>Set their profile, stats, and the price users pay for a 7-day subscription.</p></div></div>
+            <div className="section-head"><div><h2>Add a copy trader</h2><p>Set their profile, stats, rating, country, photo, and the price &amp; duration of a subscription.</p></div></div>
             <form className="admin-account-form" onSubmit={createTrader}>
               <label className="input-label">Name</label>
               <input className="text-input" placeholder="e.g. Alex Morgan" value={traderForm.name} onChange={e => setTraderForm({ ...traderForm, name: e.target.value })} maxLength={80}/>
@@ -966,14 +997,27 @@ export default function AdminPage() {
               <div className="select-wrap"><select value={traderForm.avatarColor} onChange={e => setTraderForm({ ...traderForm, avatarColor: e.target.value as AvatarColor })}>{AVATAR_COLORS.map(c => <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>)}</select></div>
               <label className="input-label">Focus</label>
               <input className="text-input" placeholder="e.g. BTC, ETH" value={traderForm.focus} onChange={e => setTraderForm({ ...traderForm, focus: e.target.value })} maxLength={120}/>
+              <label className="input-label">Short bio</label>
+              <textarea className="text-input" rows={3} placeholder="A short bio shown on their card" value={traderForm.bio} onChange={e => setTraderForm({ ...traderForm, bio: e.target.value })} maxLength={200}/>
               <label className="input-label">Risk level</label>
               <div className="select-wrap"><select value={traderForm.riskLevel} onChange={e => setTraderForm({ ...traderForm, riskLevel: e.target.value as RiskLevel })}>{RISK_LEVELS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
               <label className="input-label">Return % (30-day)</label>
               <input className="text-input" type="number" step="0.01" placeholder="e.g. 42.80" value={traderForm.returnPercent} onChange={e => setTraderForm({ ...traderForm, returnPercent: e.target.value })}/>
               <label className="input-label">Win rate %</label>
               <input className="text-input" type="number" step="0.01" min="0" max="100" placeholder="e.g. 78" value={traderForm.winRate} onChange={e => setTraderForm({ ...traderForm, winRate: e.target.value })}/>
-              <label className="input-label">Subscription price (per 7 days)</label>
+              <label className="input-label">Subscription price</label>
               <input className="text-input" type="number" step="0.01" min="0" placeholder="e.g. 49.00" value={traderForm.subscriptionAmount} onChange={e => setTraderForm({ ...traderForm, subscriptionAmount: e.target.value })}/>
+              <label className="input-label">Subscription duration</label>
+              <div className="select-wrap"><select value={traderForm.subscriptionDurationDays} onChange={e => setTraderForm({ ...traderForm, subscriptionDurationDays: e.target.value })}>{SUBSCRIPTION_DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} days</option>)}</select></div>
+              <label className="input-label">Rating (0-5)</label>
+              <input className="text-input" type="number" step="0.1" min="0" max="5" placeholder="e.g. 4.8" value={traderForm.rating} onChange={e => setTraderForm({ ...traderForm, rating: e.target.value })}/>
+              <label className="input-label">Country</label>
+              <div className="select-wrap"><select value={traderForm.country} onChange={e => setTraderForm({ ...traderForm, country: e.target.value })}>{COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
+              <label className="input-label">Profile photo URL (optional)</label>
+              <div className="admin-photo-row">
+                {traderForm.photoUrl && <img src={traderForm.photoUrl} alt="" className="admin-photo-preview" onError={e => { (e.target as HTMLImageElement).style.visibility = "hidden"; }}/>}
+                <input className="text-input" type="url" placeholder="https://..." value={traderForm.photoUrl} onChange={e => setTraderForm({ ...traderForm, photoUrl: e.target.value })} maxLength={600}/>
+              </div>
               <button className="primary-btn full-btn" disabled={traderCreating}>{traderCreating ? "Adding..." : "Add trader"}</button>
             </form>
           </section>
@@ -986,16 +1030,25 @@ export default function AdminPage() {
                   <input className="text-input" value={editTraderForm.handle} onChange={e => setEditTraderForm({ ...editTraderForm, handle: e.target.value })} maxLength={40}/>
                   <div className="select-wrap"><select value={editTraderForm.avatarColor} onChange={e => setEditTraderForm({ ...editTraderForm, avatarColor: e.target.value as AvatarColor })}>{AVATAR_COLORS.map(c => <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>)}</select></div>
                   <input className="text-input" value={editTraderForm.focus} onChange={e => setEditTraderForm({ ...editTraderForm, focus: e.target.value })} maxLength={120}/>
+                  <textarea className="text-input" rows={3} value={editTraderForm.bio} onChange={e => setEditTraderForm({ ...editTraderForm, bio: e.target.value })} placeholder="Short bio" maxLength={200}/>
                   <div className="select-wrap"><select value={editTraderForm.riskLevel} onChange={e => setEditTraderForm({ ...editTraderForm, riskLevel: e.target.value as RiskLevel })}>{RISK_LEVELS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
                   <input className="text-input" type="number" step="0.01" value={editTraderForm.returnPercent} onChange={e => setEditTraderForm({ ...editTraderForm, returnPercent: e.target.value })} placeholder="Return %"/>
                   <input className="text-input" type="number" step="0.01" value={editTraderForm.winRate} onChange={e => setEditTraderForm({ ...editTraderForm, winRate: e.target.value })} placeholder="Win rate %"/>
                   <input className="text-input" type="number" step="0.01" min="0" value={editTraderForm.subscriptionAmount} onChange={e => setEditTraderForm({ ...editTraderForm, subscriptionAmount: e.target.value })} placeholder="Subscription price"/>
+                  <div className="select-wrap"><select value={editTraderForm.subscriptionDurationDays} onChange={e => setEditTraderForm({ ...editTraderForm, subscriptionDurationDays: e.target.value })}>{SUBSCRIPTION_DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} days</option>)}</select></div>
+                  <input className="text-input" type="number" step="0.1" min="0" max="5" value={editTraderForm.rating} onChange={e => setEditTraderForm({ ...editTraderForm, rating: e.target.value })} placeholder="Rating (0-5)"/>
+                  <div className="select-wrap"><select value={editTraderForm.country} onChange={e => setEditTraderForm({ ...editTraderForm, country: e.target.value })}>{COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
+                  <div className="admin-photo-row">
+                    {editTraderForm.photoUrl && <img src={editTraderForm.photoUrl} alt="" className="admin-photo-preview" onError={e => { (e.target as HTMLImageElement).style.visibility = "hidden"; }}/>}
+                    <input className="text-input" type="url" value={editTraderForm.photoUrl} onChange={e => setEditTraderForm({ ...editTraderForm, photoUrl: e.target.value })} placeholder="Profile photo URL" maxLength={600}/>
+                  </div>
                   <div className="admin-reject-buttons"><button className="outline-btn small" onClick={() => setEditingTraderId(null)}>Cancel</button><button className="primary-btn small" disabled={traderBusyId === t.id} onClick={() => saveTraderEdit(t.id)}>Save</button></div>
                 </div> : <>
-                  <div className="admin-account-item-top"><strong>{t.name} <span style={{ color: "#9aa4b7", fontWeight: 500 }}>{t.handle}</span></strong><span className={`status-pill ${t.isActive ? "approved" : "rejected"}`}><span/>{t.isActive ? "Active" : "Hidden"}</span></div>
-                  <p>{t.focus} · {t.riskLevel} risk · {Number(t.returnPercent) >= 0 ? "+" : ""}{Number(t.returnPercent).toFixed(2)}% return · {Number(t.winRate).toFixed(0)}% win rate · {money(Number(t.subscriptionAmount))}/7d · {t.activeSubscribers} active subscriber{t.activeSubscribers === 1 ? "" : "s"}</p>
+                  <div className="admin-account-item-top"><strong>{flagEmoji(t.country)} {t.name} <span style={{ color: "#9aa4b7", fontWeight: 500 }}>{t.handle}</span></strong><span className={`status-pill ${t.isActive ? "approved" : "rejected"}`}><span/>{t.isActive ? "Active" : "Hidden"}</span></div>
+                  <p>{t.bio}</p>
+                  <p>{t.focus} · {t.riskLevel} risk · {Number(t.returnPercent) >= 0 ? "+" : ""}{Number(t.returnPercent).toFixed(2)}% return · {Number(t.winRate).toFixed(0)}% win rate · ★ {Number(t.rating).toFixed(1)} · {money(Number(t.subscriptionAmount))}/{t.subscriptionDurationDays}d · {t.activeSubscribers} active subscriber{t.activeSubscribers === 1 ? "" : "s"}</p>
                   <div className="admin-account-item-actions">
-                    <button className="outline-btn small" onClick={() => { setEditingTraderId(t.id); setEditTraderForm({ name: t.name, handle: t.handle, avatarColor: t.avatarColor as AvatarColor, focus: t.focus, riskLevel: t.riskLevel as RiskLevel, returnPercent: t.returnPercent, winRate: t.winRate, subscriptionAmount: t.subscriptionAmount }); }}>Edit</button>
+                    <button className="outline-btn small" onClick={() => { setEditingTraderId(t.id); setEditTraderForm({ name: t.name, handle: t.handle, avatarColor: t.avatarColor as AvatarColor, focus: t.focus, bio: t.bio, riskLevel: t.riskLevel as RiskLevel, returnPercent: t.returnPercent, winRate: t.winRate, subscriptionAmount: t.subscriptionAmount, subscriptionDurationDays: String(t.subscriptionDurationDays), rating: t.rating, country: t.country, photoUrl: t.photoUrl ?? "" }); }}>Edit</button>
                     <button className="outline-btn small" disabled={traderBusyId === t.id} onClick={() => toggleTraderActive(t)}>{t.isActive ? "Deactivate" : "Activate"}</button>
                     <button className="outline-btn small danger-outline" disabled={traderBusyId === t.id} onClick={() => removeTrader(t)}><Trash2 size={13}/> Delete</button>
                   </div>
@@ -1008,7 +1061,7 @@ export default function AdminPage() {
 
         {tab === "bots" && <section className="admin-accounts-layout">
           <section className="panel admin-panel">
-            <div className="section-head"><div><h2>Add a trading bot</h2><p>Set its strategy, risk, minimum allocation, and the price users pay for a 7-day subscription.</p></div></div>
+            <div className="section-head"><div><h2>Add a trading bot</h2><p>Set its strategy, risk, rating, country, photo, minimum allocation, and the price &amp; duration of a subscription.</p></div></div>
             <form className="admin-account-form" onSubmit={createBot}>
               <label className="input-label">Name</label>
               <input className="text-input" placeholder="e.g. BTC Grid Pro" value={botForm.name} onChange={e => setBotForm({ ...botForm, name: e.target.value })} maxLength={80}/>
@@ -1020,8 +1073,19 @@ export default function AdminPage() {
               <div className="select-wrap"><select value={botForm.riskLevel} onChange={e => setBotForm({ ...botForm, riskLevel: e.target.value as RiskLevel })}>{RISK_LEVELS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
               <label className="input-label">Minimum allocation ($)</label>
               <input className="text-input" type="number" step="0.01" min="0" placeholder="e.g. 100.00" value={botForm.minAllocation} onChange={e => setBotForm({ ...botForm, minAllocation: e.target.value })}/>
-              <label className="input-label">Subscription price (per 7 days)</label>
+              <label className="input-label">Subscription price</label>
               <input className="text-input" type="number" step="0.01" min="0" placeholder="e.g. 19.00" value={botForm.subscriptionAmount} onChange={e => setBotForm({ ...botForm, subscriptionAmount: e.target.value })}/>
+              <label className="input-label">Subscription duration</label>
+              <div className="select-wrap"><select value={botForm.subscriptionDurationDays} onChange={e => setBotForm({ ...botForm, subscriptionDurationDays: e.target.value })}>{SUBSCRIPTION_DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} days</option>)}</select></div>
+              <label className="input-label">Rating (0-5)</label>
+              <input className="text-input" type="number" step="0.1" min="0" max="5" placeholder="e.g. 4.8" value={botForm.rating} onChange={e => setBotForm({ ...botForm, rating: e.target.value })}/>
+              <label className="input-label">Country</label>
+              <div className="select-wrap"><select value={botForm.country} onChange={e => setBotForm({ ...botForm, country: e.target.value })}>{COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
+              <label className="input-label">Profile photo URL (optional)</label>
+              <div className="admin-photo-row">
+                {botForm.photoUrl && <img src={botForm.photoUrl} alt="" className="admin-photo-preview" onError={e => { (e.target as HTMLImageElement).style.visibility = "hidden"; }}/>}
+                <input className="text-input" type="url" placeholder="https://..." value={botForm.photoUrl} onChange={e => setBotForm({ ...botForm, photoUrl: e.target.value })} maxLength={600}/>
+              </div>
               <button className="primary-btn full-btn" disabled={botCreating}>{botCreating ? "Adding..." : "Add bot"}</button>
             </form>
           </section>
@@ -1036,13 +1100,20 @@ export default function AdminPage() {
                   <div className="select-wrap"><select value={editBotForm.riskLevel} onChange={e => setEditBotForm({ ...editBotForm, riskLevel: e.target.value as RiskLevel })}>{RISK_LEVELS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
                   <input className="text-input" type="number" step="0.01" min="0" value={editBotForm.minAllocation} onChange={e => setEditBotForm({ ...editBotForm, minAllocation: e.target.value })} placeholder="Minimum allocation"/>
                   <input className="text-input" type="number" step="0.01" min="0" value={editBotForm.subscriptionAmount} onChange={e => setEditBotForm({ ...editBotForm, subscriptionAmount: e.target.value })} placeholder="Subscription price"/>
+                  <div className="select-wrap"><select value={editBotForm.subscriptionDurationDays} onChange={e => setEditBotForm({ ...editBotForm, subscriptionDurationDays: e.target.value })}>{SUBSCRIPTION_DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} days</option>)}</select></div>
+                  <input className="text-input" type="number" step="0.1" min="0" max="5" value={editBotForm.rating} onChange={e => setEditBotForm({ ...editBotForm, rating: e.target.value })} placeholder="Rating (0-5)"/>
+                  <div className="select-wrap"><select value={editBotForm.country} onChange={e => setEditBotForm({ ...editBotForm, country: e.target.value })}>{COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select></div>
+                  <div className="admin-photo-row">
+                    {editBotForm.photoUrl && <img src={editBotForm.photoUrl} alt="" className="admin-photo-preview" onError={e => { (e.target as HTMLImageElement).style.visibility = "hidden"; }}/>}
+                    <input className="text-input" type="url" value={editBotForm.photoUrl} onChange={e => setEditBotForm({ ...editBotForm, photoUrl: e.target.value })} placeholder="Profile photo URL" maxLength={600}/>
+                  </div>
                   <div className="admin-reject-buttons"><button className="outline-btn small" onClick={() => setEditingBotId(null)}>Cancel</button><button className="primary-btn small" disabled={botBusyId === b.id} onClick={() => saveBotEdit(b.id)}>Save</button></div>
                 </div> : <>
-                  <div className="admin-account-item-top"><strong>{b.name}</strong><span className={`status-pill ${b.isActive ? "approved" : "rejected"}`}><span/>{b.isActive ? "Active" : "Hidden"}</span></div>
+                  <div className="admin-account-item-top"><strong>{flagEmoji(b.country)} {b.name}</strong><span className={`status-pill ${b.isActive ? "approved" : "rejected"}`}><span/>{b.isActive ? "Active" : "Hidden"}</span></div>
                   <p>{b.description}</p>
-                  <p>{b.strategy} · {b.riskLevel} risk · min {money(Number(b.minAllocation))} · {money(Number(b.subscriptionAmount))}/7d · {b.activeSubscribers} active subscriber{b.activeSubscribers === 1 ? "" : "s"}</p>
+                  <p>{b.strategy} · {b.riskLevel} risk · min {money(Number(b.minAllocation))} · ★ {Number(b.rating).toFixed(1)} · {money(Number(b.subscriptionAmount))}/{b.subscriptionDurationDays}d · {b.activeSubscribers} active subscriber{b.activeSubscribers === 1 ? "" : "s"}</p>
                   <div className="admin-account-item-actions">
-                    <button className="outline-btn small" onClick={() => { setEditingBotId(b.id); setEditBotForm({ name: b.name, description: b.description, strategy: b.strategy as BotStrategy, riskLevel: b.riskLevel as RiskLevel, minAllocation: b.minAllocation, subscriptionAmount: b.subscriptionAmount }); }}>Edit</button>
+                    <button className="outline-btn small" onClick={() => { setEditingBotId(b.id); setEditBotForm({ name: b.name, description: b.description, strategy: b.strategy as BotStrategy, riskLevel: b.riskLevel as RiskLevel, minAllocation: b.minAllocation, subscriptionAmount: b.subscriptionAmount, subscriptionDurationDays: String(b.subscriptionDurationDays), rating: b.rating, country: b.country, photoUrl: b.photoUrl ?? "" }); }}>Edit</button>
                     <button className="outline-btn small" disabled={botBusyId === b.id} onClick={() => toggleBotActive(b)}>{b.isActive ? "Deactivate" : "Activate"}</button>
                     <button className="outline-btn small danger-outline" disabled={botBusyId === b.id} onClick={() => removeBot(b)}><Trash2 size={13}/> Delete</button>
                   </div>

@@ -6,11 +6,13 @@
 
 export { SUBSCRIPTION_DAYS, SUBSCRIPTION_MS } from "@/lib/subscriptions";
 export { RISK_LEVELS, type RiskLevel } from "@/lib/copy-trading";
+export { SUBSCRIPTION_DURATION_OPTIONS, type SubscriptionDurationDays } from "@/lib/catalog-profile";
 
 export const BOT_STRATEGIES = ["DCA", "Grid", "Momentum", "Scalping", "Rebalancing", "Yield"] as const;
 export type BotStrategy = (typeof BOT_STRATEGIES)[number];
 
 import { RISK_LEVELS, type RiskLevel } from "@/lib/copy-trading";
+import { validateProfileFields } from "@/lib/catalog-profile";
 
 // Validates/normalizes admin-submitted bot product fields. When `partial`
 // is true (PATCH), only fields present in `body` are validated/returned.
@@ -47,5 +49,7 @@ export function validateBotProductFields(body: Record<string, unknown>, partial:
     updates.subscriptionAmount = subscriptionAmount.toFixed(2);
   }
   if (typeof body.isActive === "boolean") updates.isActive = body.isActive;
-  return { updates };
+  const profile = validateProfileFields(body, partial);
+  if (profile.error !== undefined) return { error: profile.error };
+  return { updates: { ...updates, ...profile.updates } };
 }

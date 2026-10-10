@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, numeric, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, numeric, boolean, integer, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -174,7 +174,11 @@ export const botProducts = pgTable("bot_products", {
   strategy: text("strategy").notNull(), // DCA | Grid | Momentum | Scalping | Rebalancing | Yield
   riskLevel: text("risk_level").notNull().default("Moderate"), // Low | Moderate | High
   minAllocation: numeric("min_allocation", { precision: 18, scale: 2 }).notNull().default("10"),
-  subscriptionAmount: numeric("subscription_amount", { precision: 18, scale: 2 }).notNull(), // price for a 7-day subscription
+  subscriptionAmount: numeric("subscription_amount", { precision: 18, scale: 2 }).notNull(), // price for a subscription
+  subscriptionDurationDays: integer("subscription_duration_days").notNull().default(7), // length of one subscription period
+  rating: numeric("rating", { precision: 2, scale: 1 }).notNull().default("4.8"), // 0-5 stars, admin-set
+  country: text("country").notNull().default("US"), // ISO 3166-1 alpha-2 code, flag derived from it
+  photoUrl: text("photo_url"), // optional image URL; falls back to a color glyph when unset
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -219,10 +223,15 @@ export const copyTraders = pgTable("copy_traders", {
   avatarInitials: text("avatar_initials").notNull(),
   avatarColor: text("avatar_color").notNull().default("blue"), // purple | orange | pink | blue | green | red
   focus: text("focus").notNull(), // e.g. "BTC, ETH"
+  bio: text("bio").notNull().default(""), // short admin-written bio shown on the trader's card
   riskLevel: text("risk_level").notNull().default("Moderate"), // Low | Moderate | High
   returnPercent: numeric("return_percent", { precision: 6, scale: 2 }).notNull().default("0"), // e.g. 42.80 for "+42.80%"
   winRate: numeric("win_rate", { precision: 5, scale: 2 }).notNull().default("0"), // 0-100
-  subscriptionAmount: numeric("subscription_amount", { precision: 18, scale: 2 }).notNull(), // price for a 7-day subscription
+  subscriptionAmount: numeric("subscription_amount", { precision: 18, scale: 2 }).notNull(), // price for a subscription
+  subscriptionDurationDays: integer("subscription_duration_days").notNull().default(7), // length of one subscription period
+  rating: numeric("rating", { precision: 2, scale: 1 }).notNull().default("4.8"), // 0-5 stars, admin-set
+  country: text("country").notNull().default("US"), // ISO 3166-1 alpha-2 code, flag derived from it
+  photoUrl: text("photo_url"), // optional image URL; falls back to a color glyph when unset
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

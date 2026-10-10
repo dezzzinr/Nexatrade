@@ -4,7 +4,6 @@ import { copyTraders, copySubscriptions, users, transactions } from "@/db/schema
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
 import { blockedActionMessage } from "@/lib/accounts";
-import { SUBSCRIPTION_MS } from "@/lib/copy-trading";
 import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -62,7 +61,8 @@ export async function POST(request: NextRequest) {
     if (existing) return bad(`You're already subscribed to ${trader.name} until ${existing.expiresAt.toLocaleDateString()}.`);
 
     const amount = Number(trader.subscriptionAmount);
-    const expiresAt = new Date(now.getTime() + SUBSCRIPTION_MS);
+    const durationDays = trader.subscriptionDurationDays ?? 7;
+    const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
     await db.transaction(async (tx) => {
       if (amount > 0) {
@@ -71,17 +71,17 @@ export async function POST(request: NextRequest) {
         await tx.update(users).set({ cashBalance: sql`${users.cashBalance} - ${amount}` }).where(eq(users.id, user.id));
       }
       await tx.insert(copySubscriptions).values({ userId: user.id, traderId, amount: amount.toFixed(2), startedAt: now, expiresAt });
-      await tx.insert(transactions).values({ userId: user.id, type: "subscription", amount: amount.toFixed(2), description: `Copy trading: ${trader.name} (7 days)` });
+      await tx.insert(transactions).values({ userId: user.id, type: "subscription", amount: amount.toFixed(2), description: `Copy trading: ${trader.name} (${durationDays} days)` });
     });
 
     await notifyUser({
       userId: user.id,
       type: "copy_subscribed",
       title: `Subscribed to copy ${trader.name}`,
-      message: `You subscribed to copy trade ${trader.name} for 7 days (ends ${expiresAt.toLocaleDateString()}).`,
+      message: `You subscribed to copy trade ${trader.name} for ${durationDays} days (ends ${expiresAt.toLocaleDateString()}).`,
     });
 
-    return NextResponse.json({ success: true, expiresAt, message: `Subscribed to ${trader.name} for 7 days.` });
+    return NextResponse.json({ success: true, expiresAt, message: `Subscribed to ${trader.name} for ${durationDays} days.` });
   } catch (error) {
     console.error("Copy subscriptions POST:", error);
     return bad(error instanceof Error ? error.message : "Unable to subscribe. Please try again.", 400);

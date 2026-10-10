@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ArrowRight, CircleHelp, LockKeyhole, X } from "lucide-react";
 import { useLanguage } from "@/components/i18n-provider";
+import { useConfirm } from "@/components/confirm-provider";
 
 type Props = {
   onClose: () => void;
@@ -11,6 +12,7 @@ type Props = {
 
 export default function ForgotPasswordModal({ onClose, onSwitchToLogin }: Props) {
   const { t } = useLanguage();
+  const confirm = useConfirm();
   const [step, setStep] = useState<"identify" | "answer" | "done" | "emailSent">("identify");
   const [identifier, setIdentifier] = useState("");
   const [question, setQuestion] = useState("");
@@ -61,6 +63,7 @@ export default function ForgotPasswordModal({ onClose, onSwitchToLogin }: Props)
     if (!answer.trim()) return setError("Enter your answer.");
     if (newPassword.length < 8) return setError("New password must be at least 8 characters.");
     if (newPassword !== confirmPassword) return setError("Passwords do not match.");
+    if (!(await confirm({ title: "Reset your password?", message: "You'll need this new password the next time you sign in." }))) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "resetPasswordWithSecurityAnswer", identifier: identifier.trim(), answer, newPassword }) });

@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
         email,
         username,
         passwordHash: hashPassword(password),
-        cashBalance: "10000.00",
+        cashBalance: "0.00",
         role: isAdminEmail(email) ? "admin" : "user",
         dateOfBirth,
         gender,
@@ -134,8 +134,8 @@ export async function POST(request: NextRequest) {
         type: "account_created",
         title: "Welcome to NexaTrade!",
         message: referrer
-          ? `Your account has been created with $${(10000 + REFERRAL_BONUS_AMOUNT).toLocaleString()} in paper trading funds (including a $${REFERRAL_BONUS_AMOUNT.toFixed(2)} referral bonus for signing up with ${referrer.name}'s code). Explore the markets, place your first trade, or check out the trading bots and copy trading catalog whenever you're ready.`
-          : "Your account has been created with $10,000 in paper trading funds. Explore the markets, place your first trade, or check out the trading bots and copy trading catalog whenever you're ready.",
+          ? `Your account is ready with a $${REFERRAL_BONUS_AMOUNT.toFixed(2)} referral bonus for signing up with ${referrer.name}'s code already credited to your balance. Make a deposit to add more paper trading funds, then explore the markets, place your first trade, or check out the trading bots and copy trading catalog.`
+          : "Your account is ready with a $0.00 balance. Head to Deposit to add paper trading funds, then explore the markets, place your first trade, or check out the trading bots and copy trading catalog whenever you're ready.",
       });
       return await setSession(NextResponse.json({ success: true }), user.id);
     }

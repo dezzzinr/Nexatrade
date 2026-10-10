@@ -4,9 +4,12 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Check, KeyRound, LockKeyhole } from "lucide-react";
+import { ConfirmProvider, useConfirm } from "@/components/confirm-provider";
+import { ThemeProvider } from "@/components/theme-provider";
 
 function ResetPasswordForm() {
   const params = useSearchParams();
+  const confirm = useConfirm();
   const token = params.get("token") ?? "";
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -20,6 +23,7 @@ function ResetPasswordForm() {
     if (!token) return setError("This reset link is missing its token. Request a new one from the sign-in page.");
     if (newPassword.length < 8) return setError("New password must be at least 8 characters.");
     if (newPassword !== confirmPassword) return setError("Passwords do not match.");
+    if (!(await confirm({ title: "Reset your password?", message: "You'll need this new password the next time you sign in." }))) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "resetPasswordWithToken", token, newPassword }) });
@@ -59,10 +63,14 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", padding: "24px 16px" }}>
-      <Suspense fallback={null}>
-        <ResetPasswordForm />
-      </Suspense>
-    </div>
+    <ThemeProvider>
+      <ConfirmProvider>
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", padding: "24px 16px" }}>
+          <Suspense fallback={null}>
+            <ResetPasswordForm />
+          </Suspense>
+        </div>
+      </ConfirmProvider>
+    </ThemeProvider>
   );
 }

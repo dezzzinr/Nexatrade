@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, AlertTriangle, ArrowDownLeft, ArrowDownRight, ArrowLeftRight, ArrowRight, ArrowUpRight, Bell, BellRing, Bot, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Copy, CreditCard, Download, Eye, EyeOff, FileText, Gift, Globe, Hourglass, History, LayoutDashboard, LockKeyhole, LogOut, Menu, MoreHorizontal, Paperclip, Plus, RefreshCw, Search, Settings2, ShieldCheck, Signal, SlidersHorizontal, Sparkles, Star, Trash2, TrendingDown, TrendingUp, UploadCloud, UserRound, UsersRound, Wallet, WandSparkles, X, XCircle, Zap } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDownLeft, ArrowDownRight, ArrowLeftRight, ArrowRight, ArrowUpRight, Bell, BellRing, Bot, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Copy, CreditCard, Download, Eye, EyeOff, FileText, Gift, Globe, Hourglass, History, LayoutDashboard, LockKeyhole, LogOut, Menu, MoreHorizontal, Paperclip, Plus, RefreshCw, Search, Settings2, ShieldCheck, Signal, SlidersHorizontal, Sparkles, Star, Moon, Sun, Trash2, TrendingDown, TrendingUp, UploadCloud, UserRound, UsersRound, Wallet, WandSparkles, X, XCircle, Zap } from "lucide-react";
 import { assets as catalogAssets, getAsset as getCatalogAsset, type Asset, type Candle, type ChartPoint, type ChartPeriod, type MarketSnapshot } from "@/lib/market";
 import { formatMoney, formatMarketPrice, formatCompactMoney } from "@/lib/currency";
 import { DEPOSIT_METHODS, MAX_RECEIPT_BYTES, type DepositMethod } from "@/lib/deposits";
@@ -15,6 +15,10 @@ import ProfilePage from "@/components/profile-page";
 import { LanguageProvider, useLanguage, readStoredLanguage } from "@/components/i18n-provider";
 import { LANGUAGES, isLanguageCode, type LanguageCode } from "@/lib/i18n";
 import { downloadCsv } from "@/lib/csv";
+import { AVATAR_COLORS } from "@/lib/copy-trading";
+import { flagEmoji, countryInfo } from "@/lib/countries";
+import { ConfirmProvider, useConfirm } from "@/components/confirm-provider";
+import { ThemeProvider, useTheme } from "@/components/theme-provider";
 
 type Page = "Overview" | "Portfolio" | "Trade" | "Trading Bot" | "Markets" | "Plans" | "Copy Trading" | "Deposit" | "Withdraw" | "Trading Signals" | "Transactions" | "Trade History" | "Notifications" | "Profile";
 const PAGE_VALUES: Page[] = ["Overview", "Portfolio", "Trade", "Trading Bot", "Markets", "Plans", "Copy Trading", "Deposit", "Withdraw", "Trading Signals", "Transactions", "Trade History", "Notifications", "Profile"];
@@ -61,9 +65,9 @@ function notificationVisual(type?: string): { Icon: typeof Sparkles; color: stri
   }
 }
 type AppData = { user: { id: string; name: string; email: string | null; username?: string | null; isDemo: boolean; role: string; cashBalance: number; accountStatus: string; maxTradeAmount: number | null; withdrawalsBlocked: boolean; statusReason: string | null; profilePhoto?: string | null; currency?: string; language?: string }; holdings: { id: string; symbol: string; quantity: string; avgPrice: string }[]; trades: { id: string; symbol: string; side: string; quantity: string; price: string; total: string; createdAt: string; placedBy: string | null; adminNote: string | null }[]; transactions: { id: string; type: string; amount: string; description: string; createdAt: string }[]; plan: string | null; planExpiresAt: string | null; notifications: Notification[]; unreadNotifications: number; fx?: { currency: string; rate: number; status: string; updatedAt: string | null } };
-type CopyTrader = { id: string; name: string; handle: string; avatarInitials: string; avatarColor: string; focus: string; riskLevel: string; returnPercent: string; winRate: string; subscriptionAmount: string; activeSubscribers: number; mySubscription: { expiresAt: string; amount: string } | null };
+type CopyTrader = { id: string; name: string; handle: string; avatarInitials: string; avatarColor: string; focus: string; bio: string; riskLevel: string; returnPercent: string; winRate: string; subscriptionAmount: string; subscriptionDurationDays: number; rating: string; country: string; photoUrl: string | null; activeSubscribers: number; mySubscription: { expiresAt: string; amount: string } | null };
 type CopySubscription = { id: string; traderId: string; traderName: string; traderHandle: string; amount: string; startedAt: string; expiresAt: string };
-type TradingBot = { id: string; name: string; description: string; strategy: string; riskLevel: string; minAllocation: string; subscriptionAmount: string; activeSubscribers: number; mySubscription: { expiresAt: string; amount: string } | null };
+type TradingBot = { id: string; name: string; description: string; strategy: string; riskLevel: string; minAllocation: string; subscriptionAmount: string; subscriptionDurationDays: number; rating: string; country: string; photoUrl: string | null; activeSubscribers: number; mySubscription: { expiresAt: string; amount: string } | null };
 type BotSubscription = { id: string; botProductId: string; botName: string; amount: string; startedAt: string; expiresAt: string };
 type BotInstance = { id: string; botProductId: string; botName: string; strategy: string; name: string; symbol: string; amount: string; active: boolean; createdAt: string; subscriptionActive: boolean };
 type Plan = { id: string; name: string; description: string; priceWeekly: string; features: string[]; isFeatured: boolean; activeSubscribers: number; mySubscription: { expiresAt: string; amount: string; isCurrent: boolean } | null };
@@ -100,11 +104,13 @@ function SectionHead({ title, subtitle, action }: { title: string; subtitle?: st
 function EmptyState({ icon: Icon, title, text }: { icon: typeof Bot; title: string; text: string }) { return <div className="empty-state"><span className="empty-icon"><Icon size={27}/></span><h3>{title}</h3><p>{text}</p></div>; }
 
 export default function HomePage() {
-  return <LanguageProvider><HomePageInner /></LanguageProvider>;
+  return <ThemeProvider><LanguageProvider><ConfirmProvider><HomePageInner /></ConfirmProvider></LanguageProvider></ThemeProvider>;
 }
 
 function HomePageInner() {
   const { t, language, setLanguage, translating } = useLanguage();
+  const { theme, toggleTheme } = useTheme();
+  const confirm = useConfirm();
   const [data, setData] = useState<AppData>(preview);
   // Every balance/price/P&L figure users see is converted to their chosen
   // display currency here; the ledger underneath (data.user.cashBalance,
@@ -384,6 +390,7 @@ function HomePageInner() {
     if (!receiptFile) return notify("Attach a receipt or screenshot of your payment.", true);
     const amount = Number(depositAmount);
     if (!amount || amount <= 0) return notify("Enter a valid deposit amount.", true);
+    if (!(await confirm({ title: "Submit this deposit request?", message: `We'll review your ${money(amount)} deposit and credit it to your balance once your payment is verified.`, confirmLabel: "Submit request" }))) return;
     setDepositSubmitting(true);
     try {
       const res = await fetch("/api/deposits", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method: depositMethod, amount, depositAccountId: depositAccountId || null, reference: depositReference, note: depositNote, receipt: receiptFile.dataUrl, receiptFilename: receiptFile.name }) });
@@ -397,7 +404,7 @@ function HomePageInner() {
   const action = async (body: Record<string, unknown>) => { if (loading) return false; setLoading(true); try { const res = await fetch("/api/app", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const result = await res.json(); if (!res.ok) throw new Error(result.error || "Something went wrong"); notify(result.message || "Done successfully"); await refresh(); return true; } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); return false; } finally { setLoading(false); } };
   const authenticate = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); try { const res = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "login", identifier: authIdentifier, password: authPassword }) }); const result = await res.json(); if (!res.ok) throw new Error(result.error); setAuthMode(null); setAuthPassword(""); setAuthIdentifier(""); setPage("Overview"); await refresh(); notify("Welcome back!"); } catch (error) { notify(error instanceof Error ? error.message : "Authentication failed", true); } finally { setLoading(false); } };
   const handleRegistered = async () => { setAuthMode(null); setPage("Overview"); await refresh(); notify("Welcome to NexaTrade! Your account is ready."); };
-  const logout = async () => { await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "logout" }) }); setProfileOpen(false); await refresh(); setPage("Overview"); notify("Switched to a fresh demo workspace"); };
+  const logout = async () => { if (!(await confirm({ title: "Sign out?" }))) return; await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "logout" }) }); setProfileOpen(false); await refresh(); setPage("Overview"); notify("Switched to a fresh demo workspace"); };
   const toggleNotifications = () => {
     const opening = !notificationsOpen;
     setNotificationsOpen(opening);
@@ -441,6 +448,7 @@ function HomePageInner() {
       if (!usd || usd <= 0) return notify("Enter a valid USD amount", true);
       const quantity = Math.floor((usd / currentAsset.price) * 1e8) / 1e8;
       if (!quantity) return notify("Amount is too small for this asset", true);
+      if (!(await confirm({ title: `${side === "buy" ? "Buy" : "Sell"} ${symbol}?`, message: `This will ${side} ${quantity} ${symbol} (~${money(usd)}) at the live market price.`, confirmLabel: side === "buy" ? "Buy now" : "Sell now" }))) return;
       const ok = await action({ action: "trade", symbol, side, quantity });
       if (ok) { setTradeAmount(""); void refreshMarket(); void loadMyOrders(); }
       return;
@@ -453,6 +461,7 @@ function HomePageInner() {
     const quantity = Math.floor((usd / price) * 1e8) / 1e8;
     if (!quantity) return notify("Amount is too small for this asset", true);
     if (loading) return;
+    if (!(await confirm({ title: `Place ${orderTypeLabel(orderType)} order?`, message: `${side === "buy" ? "Buy" : "Sell"} ${quantity} ${symbol} (~${money(usd)}) when the price reaches $${price.toLocaleString()}. You can cancel it anytime before it fills.`, confirmLabel: "Place order" }))) return;
     setLoading(true);
     try {
       const res = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol, side, type: orderType, quantity, triggerPrice: price }) });
@@ -465,6 +474,7 @@ function HomePageInner() {
   };
   const cancelOrder = async (id: string) => {
     if (cancellingOrderId) return;
+    if (!(await confirm({ title: "Cancel this order?", message: "This pending order will be removed and won't fill. This can't be undone." }))) return;
     setCancellingOrderId(id);
     try {
       const res = await fetch(`/api/orders/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "cancel" }) });
@@ -481,6 +491,7 @@ function HomePageInner() {
     const margin = Number(marginAmount);
     if (!margin || margin < MIN_MARGIN) return notify(`Enter a margin amount of at least $${MIN_MARGIN}.`, true);
     if (openingPosition) return;
+    if (!(await confirm({ title: `Open ${leverageX}x ${positionSide} position?`, message: `Posting ${money(margin)} margin on ${symbol} at ${leverageX}x leverage. You can lose up to your full margin if the price moves against you, including automatic liquidation.`, confirmLabel: "Open position", danger: leverageX >= 20 }))) return;
     setOpeningPosition(true);
     try {
       const res = await fetch("/api/positions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol, side: positionSide, leverage: leverageX, margin, takeProfitPrice: positionTP || null, stopLossPrice: positionSL || null }) });
@@ -491,9 +502,10 @@ function HomePageInner() {
       await Promise.all([loadMyPositions(), refresh()]);
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setOpeningPosition(false); }
   };
-  const quickTrade = async (e: React.FormEvent) => { e.preventDefault(); if (!requireRealAccount()) return; if (!quoteLive || currentAsset.price <= 0) return notify("Live quotes are unavailable. Paper trading is paused.", true); const usd = Number(tradeAmount); if (!usd || usd <= 0) return notify("Enter a valid USD amount", true); const quantity = Math.floor((usd / currentAsset.price) * 1e8) / 1e8; if (!quantity) return notify("Amount is too small for this asset", true); const ok = await action({ action: "trade", symbol, side, quantity }); if (ok) { setTradeAmount(""); void refreshMarket(); } };
+  const quickTrade = async (e: React.FormEvent) => { e.preventDefault(); if (!requireRealAccount()) return; if (!quoteLive || currentAsset.price <= 0) return notify("Live quotes are unavailable. Paper trading is paused.", true); const usd = Number(tradeAmount); if (!usd || usd <= 0) return notify("Enter a valid USD amount", true); const quantity = Math.floor((usd / currentAsset.price) * 1e8) / 1e8; if (!quantity) return notify("Amount is too small for this asset", true); if (!(await confirm({ title: `${side === "buy" ? "Buy" : "Sell"} ${symbol}?`, message: `This will ${side} ${quantity} ${symbol} (~${money(usd)}) at the live market price.`, confirmLabel: side === "buy" ? "Buy now" : "Sell now" }))) return; const ok = await action({ action: "trade", symbol, side, quantity }); if (ok) { setTradeAmount(""); void refreshMarket(); } };
   const closePosition = async (id: string) => {
     if (closingPositionId) return;
+    if (!(await confirm({ title: "Close this position?", message: "This realizes its current profit or loss immediately and returns remaining margin to your cash balance." }))) return;
     setClosingPositionId(id);
     try {
       const res = await fetch(`/api/positions/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "close" }) });
@@ -512,8 +524,9 @@ function HomePageInner() {
   const toggleWatchlist = async (sym: string) => {
     if (!requireRealAccount()) return;
     if (watchlistBusy) return;
-    setWatchlistBusy(sym);
     const starred = watchlist.includes(sym);
+    if (!(await confirm({ title: starred ? `Remove ${sym} from your watchlist?` : `Add ${sym} to your watchlist?` }))) return;
+    setWatchlistBusy(sym);
     try {
       if (starred) {
         await fetch(`/api/watchlist?symbol=${encodeURIComponent(sym)}`, { method: "DELETE" });
@@ -534,6 +547,7 @@ function HomePageInner() {
     const target = Number(alertTargetPrice);
     if (!target || target <= 0) return notify("Enter a valid target price.", true);
     if (creatingAlert) return;
+    if (!(await confirm({ title: "Create this price alert?", message: `We'll notify you the moment ${symbol} goes ${alertDirection} $${target.toLocaleString()}.`, confirmLabel: "Create alert" }))) return;
     setCreatingAlert(true);
     try {
       const res = await fetch("/api/price-alerts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol, direction: alertDirection, targetPrice: target }) });
@@ -546,6 +560,7 @@ function HomePageInner() {
   };
   const cancelPriceAlert = async (id: string) => {
     if (cancellingAlertId) return;
+    if (!(await confirm({ title: "Cancel this price alert?" }))) return;
     setCancellingAlertId(id);
     try {
       const res = await fetch(`/api/price-alerts/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "cancel" }) });
@@ -571,8 +586,15 @@ function HomePageInner() {
   };
   useEffect(() => { if (ready && page === "Notifications") { void loadAllNotifications(0, notifTypeFilter); if (data.unreadNotifications > 0) fetch("/api/notifications", { method: "POST" }).then(() => refresh()).catch(() => {}); } }, [ready, page]);
   const markOneNotificationRead = async (id: string) => {
+    if (!(await confirm({ title: "Mark this notification as read?" }))) return;
     try { await fetch(`/api/notifications/${id}`, { method: "PATCH" }); } catch { /* ignore */ }
     setAllNotifications((rows) => rows.map((n) => n.id === id ? { ...n, readAt: n.readAt ?? new Date().toISOString() } : n));
+  };
+  const markAllNotificationsRead = async () => {
+    if (!(await confirm({ title: "Mark all notifications as read?" }))) return;
+    await fetch("/api/notifications", { method: "POST" });
+    refresh();
+    loadAllNotifications(0, notifTypeFilter);
   };
   const loadCopyTraders = async () => { try { const res = await fetch("/api/copy-traders", { cache: "no-store" }); if (!res.ok) return; const result = await res.json(); if (Array.isArray(result.traders)) setCopyTraders(result.traders); } catch { /* ignore */ } finally { setCopyTradersLoaded(true); } };
   const loadMySubscriptions = async () => { try { const res = await fetch("/api/copy-subscriptions", { cache: "no-store" }); if (!res.ok) return; const result = await res.json(); if (Array.isArray(result.subscriptions)) setMySubscriptions(result.subscriptions); } catch { /* ignore */ } };
@@ -580,12 +602,13 @@ function HomePageInner() {
   const subscribeToTrader = async (trader: CopyTrader) => {
     if (!requireRealAccount()) return;
     if (subscribingId) return;
+    if (!(await confirm({ title: `Subscribe to ${trader.name}?`, message: `${Number(trader.subscriptionAmount) > 0 ? `${money(Number(trader.subscriptionAmount))} will be charged from your cash balance for a` : "This starts a"} 7-day subscription.`, confirmLabel: "Subscribe" }))) return;
     setSubscribingId(trader.id);
     try {
       const res = await fetch("/api/copy-subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ traderId: trader.id }) });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Something went wrong");
-      notify(result.message || `Subscribed to ${trader.name} for 7 days`);
+      notify(result.message || `Subscribed to ${trader.name}`);
       await Promise.all([loadCopyTraders(), loadMySubscriptions(), refresh()]);
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setSubscribingId(""); }
   };
@@ -597,12 +620,13 @@ function HomePageInner() {
   const subscribeToBot = async (bot: TradingBot) => {
     if (!requireRealAccount()) return;
     if (botSubscribingId) return;
+    if (!(await confirm({ title: `Subscribe to ${bot.name}?`, message: `${Number(bot.subscriptionAmount) > 0 ? `${money(Number(bot.subscriptionAmount))} will be charged from your cash balance for a` : "This starts a"} 7-day subscription.`, confirmLabel: "Subscribe" }))) return;
     setBotSubscribingId(bot.id);
     try {
       const res = await fetch("/api/bot-subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ botProductId: bot.id }) });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Something went wrong");
-      notify(result.message || `Subscribed to ${bot.name} for 7 days`);
+      notify(result.message || `Subscribed to ${bot.name}`);
       await Promise.all([loadTradingBots(), loadBotSubHistory(), refresh()]);
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setBotSubscribingId(""); }
   };
@@ -616,6 +640,7 @@ function HomePageInner() {
     if (instanceCreating) return;
     const amount = Number(newInstanceAmount);
     if (!amount || amount < Number(bot.minAllocation)) return notify(`Enter an allocation of at least ${money(Number(bot.minAllocation))}.`, true);
+    if (!(await confirm({ title: `Configure this ${bot.name} instance?`, message: `It will track ${newInstanceSymbol} with an allocation of ${money(amount)}.`, confirmLabel: "Configure bot" }))) return;
     setInstanceCreating(true);
     try {
       const res = await fetch("/api/bot-instances", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ botProductId: bot.id, symbol: newInstanceSymbol, amount, name: newInstanceName }) });
@@ -629,6 +654,7 @@ function HomePageInner() {
   };
   const toggleBotInstance = async (instance: BotInstance) => {
     if (instanceBusyId) return;
+    if (!(await confirm({ title: instance.active ? `Pause ${instance.name}?` : `Resume ${instance.name}?` }))) return;
     setInstanceBusyId(instance.id);
     try {
       const res = await fetch(`/api/bot-instances/${instance.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: !instance.active }) });
@@ -638,7 +664,8 @@ function HomePageInner() {
     } catch (error) { notify(error instanceof Error ? error.message : "Something went wrong", true); } finally { setInstanceBusyId(""); }
   };
   const removeBotInstance = async (instance: BotInstance) => {
-    if (instanceBusyId || !window.confirm(`Remove ${instance.name}? This only deletes the configuration, not your bot subscription.`)) return;
+    if (instanceBusyId) return;
+    if (!(await confirm({ title: `Remove ${instance.name}?`, message: "This only deletes the configuration, not your bot subscription.", confirmLabel: "Remove", danger: true }))) return;
     setInstanceBusyId(instance.id);
     try {
       const res = await fetch(`/api/bot-instances/${instance.id}`, { method: "DELETE" });
@@ -653,6 +680,7 @@ function HomePageInner() {
   const subscribeToPlan = async (plan: Plan) => {
     if (!requireRealAccount()) return;
     if (planSubscribingId) return;
+    if (!(await confirm({ title: `Switch to the ${plan.name} plan?`, message: `${Number(plan.priceWeekly) > 0 ? `${money(Number(plan.priceWeekly))} will be charged from your cash balance for a` : "This starts a"} 7-day subscription.`, confirmLabel: "Confirm" }))) return;
     setPlanSubscribingId(plan.id);
     try {
       const res = await fetch("/api/plan-subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planId: plan.id }) });
@@ -671,6 +699,7 @@ function HomePageInner() {
     if (amount > data.user.cashBalance) return notify("You can't request more than your available balance.", true);
     if (withdrawalDestination.trim().length < 3) return notify("Tell us where to send your payout.", true);
     if (withdrawalMethod === "other" && withdrawalMethodLabelInput.trim().length < 2) return notify("Tell us the name of the platform you'd like to be paid through.", true);
+    if (!(await confirm({ title: "Submit this withdrawal request?", message: `${money(amount)} will be held from your available balance right away and paid out to the destination you provided once an admin reviews it.`, confirmLabel: "Submit request" }))) return;
     setWithdrawalSubmitting(true);
     try {
       const res = await fetch("/api/withdrawals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method: withdrawalMethod, methodLabel: withdrawalMethodLabelInput, amount, destination: withdrawalDestination, note: withdrawalNote }) });
@@ -817,7 +846,7 @@ function HomePageInner() {
   return <div className="app-shell">
     {mobileMenu && <div className="mobile-overlay" onClick={() => setMobileMenu(false)}/>}
     <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}><div className="brand" onClick={() => go("Overview")}><div className="brand-icon"><Activity size={23} strokeWidth={3}/></div><span>Nexa<span>Trade</span></span><button className="mobile-close" onClick={(e) => { e.stopPropagation(); setMobileMenu(false); }}><X size={19}/></button></div><div className="sidebar-body">{navGroups.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{t(group.label)}</div>{group.items.map(item => { const Icon = item.icon; return <button key={item.name} className={`nav-item ${page === item.name ? "selected" : ""}`} onClick={() => go(item.name)}><Icon size={19} strokeWidth={page === item.name ? 2.25 : 1.8}/><span>{t(item.name)}</span>{item.name === "Trading Signals" && <span className="nav-new">{t("NEW")}</span>}</button>; })}</div>)}</div><div className="sidebar-bottom"><div className="help-card"><span className="help-bubble"><CircleHelp size={18}/></span><strong>{t("Need a hand?")}</strong><p>{t("Explore the platform with your free demo account.")}</p><button onClick={() => { go("Trading Signals"); }}>{t("Explore signals")} <ArrowRight size={14}/></button></div><div className="sidebar-footer"><ShieldCheck size={15}/> {t("Secure paper trading platform")}</div></div></aside>
-    <div className="main-shell"><header className="topbar"><div className="topbar-left"><button className="icon-btn menu-btn" onClick={() => setMobileMenu(true)} aria-label="Open menu"><Menu size={22}/></button><div className="breadcrumb">{t("Workspace")} <ChevronRight size={15}/> <strong>{t(page)}</strong></div></div><div className="topbar-right"><div className={`market-status ${market.status}`} title={market.updatedAt ? `CoinGecko quote updated ${new Date(market.updatedAt).toLocaleString()}` : "CoinGecko market data"} aria-live="polite"><i/><span className="market-status-label">{market.status === "live" ? `Live · ${asOf}` : market.status === "loading" ? "Loading markets" : market.status === "stale" ? "Stale quotes" : "Prices offline"}</span><button className="market-refresh" title="Refresh prices and chart" aria-label="Refresh prices and chart" onClick={() => { void refreshMarket(); setChartRefresh(n => n + 1); }}><RefreshCw size={13} className={marketRefreshing ? "spin" : ""}/></button></div><div className="top-search"><Search size={18}/><input placeholder={t("Search markets...")} value={search} onChange={e => { setSearch(e.target.value); if (e.target.value) setPage("Markets"); }} onFocus={() => {}}/><span>⌘ K</span></div><span className="topbar-divider"/><div className="notification-wrap"><button className="icon-btn notif-btn" aria-label={t("Language")} title={t("Language")} onClick={() => { setLanguageMenuOpen(!languageMenuOpen); setNotificationsOpen(false); setProfileOpen(false); }}><Globe size={20}/></button>{languageMenuOpen && <div className="popover language-popover"><div className="popover-title">{t("Language")}{translating && <span className="language-translating">…</span>}</div>{LANGUAGES.map(l => <button key={l.code} className={`language-option ${language === l.code ? "selected" : ""}`} onClick={() => changeLanguage(l.code)}><span className="language-flag">{l.flag}</span><span className="language-name">{l.nativeLabel}</span>{language === l.code && <Check size={15}/>}</button>)}</div>}</div><div className="notification-wrap"><button className="icon-btn notif-btn" aria-label="Notifications" onClick={toggleNotifications}><Bell size={20}/>{data.unreadNotifications > 0 && <i/>}</button>{notificationsOpen && <div className="popover notification-popover"><div className="popover-title">{t("Notifications")} {data.unreadNotifications > 0 && <span>{data.unreadNotifications} new</span>}</div>{data.notifications.length === 0 ? <div className="notification-empty"><Bell size={18}/><p>{t("No notifications yet")}</p></div> : data.notifications.map(n => { const { Icon, color } = notificationVisual(n.type); return <div className={`notification-item ${n.readAt ? "" : "unread"}`} key={n.id}><span className={`notification-icon ${color}`}><Icon size={16}/></span><div><strong>{n.title}</strong><p>{n.message}</p><small>{timeAgo(n.createdAt)}</small></div></div>; })}<button className="notification-see-all" onClick={() => { setNotificationsOpen(false); go("Notifications"); }}>{t("See all notifications")} <ArrowRight size={13}/></button></div>}</div><div className="profile-wrap"><button className="profile-button" onClick={() => { setProfileOpen(!profileOpen); setNotificationsOpen(false); }}><span className="avatar">{data.user.profilePhoto ? <img src={data.user.profilePhoto} alt="" style={{width:"100%",height:"100%",borderRadius:"50%",objectFit:"cover"}}/> : data.user.name.split(" ").map(n => n[0]).slice(0, 2).join("")}</span><span className="profile-meta"><strong>{data.user.name}</strong><small>{data.user.isDemo ? t("Demo account") : (data.plan ? data.plan + " " + t("member") : t("No active plan"))}</small></span><ChevronDown size={16}/></button>{profileOpen && <div className="popover profile-popover"><div className="profile-pop-head"><strong>{data.user.name}</strong><span>{data.user.email ?? t("Exploring in demo mode")}</span></div>{data.user.role === "admin" && <a href="/admin" className="admin-link-btn"><ShieldCheck size={17}/> {t("Admin panel")}</a>}{!data.user.isDemo && <button onClick={() => { setPage("Profile"); setProfileOpen(false); }}><UserRound size={17}/> {t("View profile")}</button>}{data.user.isDemo ? <><button onClick={() => { setAuthMode("register"); setProfileOpen(false); }}><UserRound size={17}/> {t("Create an account")}</button><button onClick={() => { setAuthMode("login"); setProfileOpen(false); }}><LockKeyhole size={17}/> {t("Sign in")}</button></> : <button onClick={logout}><LogOut size={17}/> {t("Log out")}</button>}</div>}</div></div></header>
+    <div className="main-shell"><header className="topbar"><div className="topbar-left"><button className="icon-btn menu-btn" onClick={() => setMobileMenu(true)} aria-label="Open menu"><Menu size={22}/></button><div className="breadcrumb">{t("Workspace")} <ChevronRight size={15}/> <strong>{t(page)}</strong></div></div><div className="topbar-right"><div className={`market-status ${market.status}`} title={market.updatedAt ? `CoinGecko quote updated ${new Date(market.updatedAt).toLocaleString()}` : "CoinGecko market data"} aria-live="polite"><i/><span className="market-status-label">{market.status === "live" ? `Live · ${asOf}` : market.status === "loading" ? "Loading markets" : market.status === "stale" ? "Stale quotes" : "Prices offline"}</span><button className="market-refresh" title="Refresh prices and chart" aria-label="Refresh prices and chart" onClick={() => { void refreshMarket(); setChartRefresh(n => n + 1); }}><RefreshCw size={13} className={marketRefreshing ? "spin" : ""}/></button></div><div className="top-search"><Search size={18}/><input placeholder={t("Search markets...")} value={search} onChange={e => { setSearch(e.target.value); if (e.target.value) setPage("Markets"); }} onFocus={() => {}}/><span>⌘ K</span></div><span className="topbar-divider"/><button className="theme-toggle" aria-label={theme === "dark" ? t("Switch to light mode") : t("Switch to dark mode")} title={theme === "dark" ? t("Switch to light mode") : t("Switch to dark mode")} onClick={toggleTheme}>{theme === "dark" ? <Sun size={19}/> : <Moon size={19}/>}</button><div className="notification-wrap"><button className="icon-btn notif-btn" aria-label={t("Language")} title={t("Language")} onClick={() => { setLanguageMenuOpen(!languageMenuOpen); setNotificationsOpen(false); setProfileOpen(false); }}><Globe size={20}/></button>{languageMenuOpen && <div className="popover language-popover"><div className="popover-title">{t("Language")}{translating && <span className="language-translating">…</span>}</div>{LANGUAGES.map(l => <button key={l.code} className={`language-option ${language === l.code ? "selected" : ""}`} onClick={() => changeLanguage(l.code)}><span className="language-flag">{l.flag}</span><span className="language-name">{l.nativeLabel}</span>{language === l.code && <Check size={15}/>}</button>)}</div>}</div><div className="notification-wrap"><button className="icon-btn notif-btn" aria-label="Notifications" onClick={toggleNotifications}><Bell size={20}/>{data.unreadNotifications > 0 && <i/>}</button>{notificationsOpen && <div className="popover notification-popover"><div className="popover-title">{t("Notifications")} {data.unreadNotifications > 0 && <span>{data.unreadNotifications} new</span>}</div>{data.notifications.length === 0 ? <div className="notification-empty"><Bell size={18}/><p>{t("No notifications yet")}</p></div> : data.notifications.map(n => { const { Icon, color } = notificationVisual(n.type); return <div className={`notification-item ${n.readAt ? "" : "unread"}`} key={n.id}><span className={`notification-icon ${color}`}><Icon size={16}/></span><div><strong>{n.title}</strong><p>{n.message}</p><small>{timeAgo(n.createdAt)}</small></div></div>; })}<button className="notification-see-all" onClick={() => { setNotificationsOpen(false); go("Notifications"); }}>{t("See all notifications")} <ArrowRight size={13}/></button></div>}</div><div className="profile-wrap"><button className="profile-button" onClick={() => { setProfileOpen(!profileOpen); setNotificationsOpen(false); }}><span className="avatar">{data.user.profilePhoto ? <img src={data.user.profilePhoto} alt="" style={{width:"100%",height:"100%",borderRadius:"50%",objectFit:"cover"}}/> : data.user.name.split(" ").map(n => n[0]).slice(0, 2).join("")}</span><span className="profile-meta"><strong>{data.user.name}</strong><small>{data.user.isDemo ? t("Demo account") : (data.plan ? data.plan + " " + t("member") : t("No active plan"))}</small></span><ChevronDown size={16}/></button>{profileOpen && <div className="popover profile-popover"><div className="profile-pop-head"><strong>{data.user.name}</strong><span>{data.user.email ?? t("Exploring in demo mode")}</span></div>{data.user.role === "admin" && <a href="/admin" className="admin-link-btn"><ShieldCheck size={17}/> {t("Admin panel")}</a>}{!data.user.isDemo && <button onClick={() => { setPage("Profile"); setProfileOpen(false); }}><UserRound size={17}/> {t("View profile")}</button>}{data.user.isDemo ? <><button onClick={() => { setAuthMode("register"); setProfileOpen(false); }}><UserRound size={17}/> {t("Create an account")}</button><button onClick={() => { setAuthMode("login"); setProfileOpen(false); }}><LockKeyhole size={17}/> {t("Sign in")}</button></> : <button onClick={logout}><LogOut size={17}/> {t("Log out")}</button>}</div>}</div></div></header>
     <main className="content">
       {(market.status === "stale" || market.status === "unavailable") && <div className="market-alert" role="status"><Clock3 size={17}/><span><strong>{market.status === "stale" ? "Market data is stale." : "Market prices are temporarily unavailable."}</strong> {market.status === "stale" ? `Showing last known CoinGecko quotes${asOf ? ` from ${asOf}` : ""}.` : "Check the connection or try again shortly."} Paper trading is paused until live prices return.</span><button onClick={() => void refreshMarket()}>Retry</button></div>}
       {data.user.accountStatus !== "active" && <div className={`account-status-banner ${data.user.accountStatus}`} role="status">
@@ -898,33 +927,45 @@ function HomePageInner() {
         <section className="panel"><div className="section-head market-section-head"><div><h2>All cryptocurrencies</h2><p>{market.status === "live" ? `Live prices · updated ${asOf}` : market.status === "loading" ? "Loading prices from CoinGecko…" : "Last known prices · trading paused"}</p></div><div className="market-controls"><div className="market-search"><Search size={17}/><input placeholder="Search assets" value={search} onChange={e => setSearch(e.target.value)}/></div><div className="segmented">{["All assets", "Gainers", "Losers", "Watchlist"].map(t => <button key={t} className={marketTab === t ? "active" : ""} onClick={() => setMarketTab(t)}>{t === "Watchlist" ? `${t} (${watchlist.length})` : t}</button>)}</div></div></div>{marketTable(filteredAssets, true)}<p className="market-data-note"><Activity size={13}/> Aggregated market data by CoinGecko. Prices are indicative; trades remain simulated.</p></section>
       </>}
       {page === "Trading Bot" && <>
-        <PageTitle title={t("Trading bots")} description={t("Subscribe to an admin-managed bot strategy for 7 days, then configure it to trade.")}><span className="demo-badge"><span/> Simulation mode</span></PageTitle>
-        <div className="feature-banner bot-banner"><div className="feature-icon"><Bot size={26}/></div><div><span className="banner-eyebrow">TRADE SMARTER, NOT HARDER</span><h2>Put your strategy on autopilot.</h2><p>Browse admin-curated bot strategies, subscribe for 7 days, then configure any number of instances to trade with.</p></div><div className="banner-art"><Bot size={100} strokeWidth={1}/></div></div>
-        <div className="section-title-row"><div><h2>Available bots</h2><p>Each subscription runs for exactly 7 days from the moment you subscribe</p></div><span className="subtle-label">{tradingBots.filter(b=>b.mySubscription).length} active</span></div>
-        {!tradingBotsLoaded ? <div className="no-results">Loading bots...</div> : tradingBots.length === 0 ? <EmptyState icon={Bot} title="No bots available yet" text="Check back soon — an admin hasn't added any trading bots yet."/> : <div className="trader-grid">{tradingBots.map(b=>{
+        <PageTitle title={t("Trading bots")} description={t("Subscribe to an admin-managed bot strategy, then configure it to trade.")}><span className="demo-badge"><span/> Simulation mode</span></PageTitle>
+        <div className="feature-banner bot-banner"><div className="feature-icon"><Bot size={26}/></div><div><span className="banner-eyebrow">TRADE SMARTER, NOT HARDER</span><h2>Put your strategy on autopilot.</h2><p>Browse admin-curated bot strategies, subscribe for the period shown on each card, then configure any number of instances to trade with.</p></div><div className="banner-art"><Bot size={100} strokeWidth={1}/></div></div>
+        <div className="section-title-row"><div><h2>Available bots</h2><p>Each subscription runs for the duration shown on its card, starting the moment you subscribe</p></div><span className="subtle-label">{tradingBots.filter(b=>b.mySubscription).length} active</span></div>
+        {!tradingBotsLoaded ? <div className="no-results">Loading bots...</div> : tradingBots.length === 0 ? <EmptyState icon={Bot} title="No bots available yet" text="Check back soon — an admin hasn't added any trading bots yet."/> : <div className="trader-grid">{tradingBots.map((b,botIdx)=>{
           const subscribed = !!b.mySubscription;
           const left = b.mySubscription ? daysLeft(b.mySubscription.expiresAt) : 0;
           const price = Number(b.subscriptionAmount);
+          const coverColor = AVATAR_COLORS[botIdx % AVATAR_COLORS.length];
           return <div className="panel trader-card" key={b.id}>
-            <div className="trader-head"><span className="trader-avatar blue"><Bot size={20}/></span><span className="verified"><CheckCircle2 size={16}/> Admin verified</span></div>
-            <h3>{b.name}</h3><p>{b.strategy} strategy</p>
-            <p className="bot-desc">{b.description}</p>
-            <div className="trader-stats"><div><span>Risk</span><strong>{b.riskLevel}</strong></div><div><span>Min allocation</span><strong>{money(Number(b.minAllocation))}</strong></div><div><span>Active subscribers</span><strong>{b.activeSubscribers}</strong></div></div>
-            <div className="trader-return" style={{marginTop:4}}><strong>{price > 0 ? money(price) : "Free"}</strong><span>/ 7 days</span></div>
-            {subscribed ? <button className="outline-btn full-btn" onClick={()=>openConfigureBot(b)}><Settings2 size={17}/> Subscribed · {left}d left · {configuringBotId===b.id ? "Close" : "Configure"}</button>
-              : <button className="primary-btn full-btn" disabled={loading || !ready || botSubscribingId === b.id} onClick={()=>subscribeToBot(b)}>{botSubscribingId === b.id ? "Subscribing..." : <><Copy size={17}/> Subscribe · {price > 0 ? money(price) : "Free"}</>}</button>}
-            {subscribed && configuringBotId===b.id && <div className="bot-configure-form">
-              <label className="input-label">Asset to trade</label>
-              <div className="select-wrap"><AssetIcon asset={getAsset(newInstanceSymbol)!} size={24}/><select value={newInstanceSymbol} onChange={e=>setNewInstanceSymbol(e.target.value)}>{assets.map(a=><option key={a.symbol} value={a.symbol}>{a.name} ({a.symbol})</option>)}</select><ChevronDown size={16}/></div>
-              <label className="input-label">Allocation (min {money(Number(b.minAllocation))})</label>
-              <div className="amount-input"><span>$</span><input type="number" min={b.minAllocation} step="0.01" value={newInstanceAmount} onChange={e=>setNewInstanceAmount(e.target.value)}/><span>USD</span></div>
-              <label className="input-label">Name (optional)</label>
-              <input className="text-input" placeholder={`${b.name} · ${newInstanceSymbol}`} value={newInstanceName} onChange={e=>setNewInstanceName(e.target.value)} maxLength={80}/>
-              <button className="primary-btn full-btn" disabled={instanceCreating} onClick={()=>createBotInstance(b)}>{instanceCreating ? "Adding..." : <>Add bot instance <Plus size={16}/></>}</button>
-            </div>}
+            <div className="trader-cover-wrap">
+              {b.photoUrl ? <img className="trader-cover-photo" src={b.photoUrl} alt={b.name} onError={e=>{(e.target as HTMLImageElement).style.display="none";}}/> : <div className={`trader-cover ${coverColor}`}><span className="trader-cover-glyph"><Bot size={34}/></span></div>}
+              <span className="trader-cover-flag" title={countryInfo(b.country).name}>{flagEmoji(b.country)}</span>
+            </div>
+            <div className="trader-body">
+              <div className="trader-name-row"><h3>{b.name}</h3><CheckCircle2 size={15} className="verified-tick"/></div>
+              <p className="trader-sub">{b.strategy} strategy · {b.riskLevel} risk · min {money(Number(b.minAllocation))}</p>
+              <p className="trader-bio">{b.description}</p>
+              <div className="trader-stats-row">
+                <div><strong><Star size={12} color="#f5a623" fill="#f5a623"/> {Number(b.rating).toFixed(1)}</strong><span>Rating</span></div>
+                <div className="stat-divider"/>
+                <div><strong>{b.activeSubscribers}</strong><span>Subscribers</span></div>
+                <div className="stat-divider"/>
+                <div><strong>{price > 0 ? money(price) : "Free"}</strong><span>/ {b.subscriptionDurationDays}d</span></div>
+              </div>
+              {subscribed ? <button className="outline-btn full-btn trader-cta" onClick={()=>openConfigureBot(b)}><Settings2 size={17}/> Subscribed · {left}d left · {configuringBotId===b.id ? "Close" : "Configure"}</button>
+                : <button className="primary-btn full-btn trader-cta" disabled={loading || !ready || botSubscribingId === b.id} onClick={()=>subscribeToBot(b)}>{botSubscribingId === b.id ? "Subscribing..." : <><Copy size={17}/> Subscribe</>}</button>}
+              {subscribed && configuringBotId===b.id && <div className="bot-configure-form">
+                <label className="input-label">Asset to trade</label>
+                <div className="select-wrap"><AssetIcon asset={getAsset(newInstanceSymbol)!} size={24}/><select value={newInstanceSymbol} onChange={e=>setNewInstanceSymbol(e.target.value)}>{assets.map(a=><option key={a.symbol} value={a.symbol}>{a.name} ({a.symbol})</option>)}</select><ChevronDown size={16}/></div>
+                <label className="input-label">Allocation (min {money(Number(b.minAllocation))})</label>
+                <div className="amount-input"><span>$</span><input type="number" min={b.minAllocation} step="0.01" value={newInstanceAmount} onChange={e=>setNewInstanceAmount(e.target.value)}/><span>USD</span></div>
+                <label className="input-label">Name (optional)</label>
+                <input className="text-input" placeholder={`${b.name} · ${newInstanceSymbol}`} value={newInstanceName} onChange={e=>setNewInstanceName(e.target.value)} maxLength={80}/>
+                <button className="primary-btn full-btn" disabled={instanceCreating} onClick={()=>createBotInstance(b)}>{instanceCreating ? "Adding..." : <>Add bot instance <Plus size={16}/></>}</button>
+              </div>}
+            </div>
           </div>;
         })}</div>}
-        <div className="copy-note"><ShieldCheck size={19}/><span>Bots are configurations only and do not execute live trades. Subscribing charges your demo cash balance for 7 days of access; resubscribe once it lapses to keep running your bots.</span></div>
+        <div className="copy-note"><ShieldCheck size={19}/><span>Bots are configurations only and do not execute live trades. Subscribing charges your demo cash balance for that bot&apos;s subscription period; resubscribe once it lapses to keep running your bots.</span></div>
         <div className="section-title-row"><div><h2>My bots</h2><p>Configured instances across your subscribed bots</p></div></div>
         {botInstances.length === 0 ? <EmptyState icon={Bot} title="No bots configured yet" text="Subscribe to a bot above, then configure an instance to see it here."/> : <div className="panel bot-list">{botInstances.map(bot=><div className="bot-item" key={bot.id}>
           <div className="bot-item-top"><span className="bot-item-icon"><Bot size={22}/></span><span className={`bot-status ${bot.active && bot.subscriptionActive ? "running":"paused"}`}><span/>{bot.active && bot.subscriptionActive ? "Active" : bot.active && !bot.subscriptionActive ? "Needs resubscribe" : "Paused"}</span></div>
@@ -940,23 +981,33 @@ function HomePageInner() {
         })}</tbody></table></div>}
       </>}
       {page === "Copy Trading" && <>
-        <PageTitle title={t("Copy trading")} description={t("Subscribe to a trader's strategy for 7 days and track your subscription history.")}/>
-        <div className="feature-banner copy-banner"><div className="feature-icon"><UsersRound size={25}/></div><div><span className="banner-eyebrow">LEARN FROM THE BEST</span><h2>Great minds trade alike.</h2><p>Browse admin-curated traders and subscribe to follow their strategy for a 7-day period.</p></div><div className="banner-art"><UsersRound size={105} strokeWidth={1}/></div></div>
-        <div className="section-title-row"><div><h2>Available traders</h2><p>Each subscription runs for exactly 7 days from the moment you subscribe</p></div><span className="subtle-label">{copyTraders.filter(t=>t.mySubscription).length} active</span></div>
+        <PageTitle title={t("Copy trading")} description={t("Subscribe to a trader's strategy and track your subscription history.")}/>
+        <div className="feature-banner copy-banner"><div className="feature-icon"><UsersRound size={25}/></div><div><span className="banner-eyebrow">LEARN FROM THE BEST</span><h2>Great minds trade alike.</h2><p>Browse admin-curated traders and subscribe to follow their strategy for the period shown on each card.</p></div><div className="banner-art"><UsersRound size={105} strokeWidth={1}/></div></div>
+        <div className="section-title-row"><div><h2>Available traders</h2><p>Each subscription runs for the duration shown on its card, starting the moment you subscribe</p></div><span className="subtle-label">{copyTraders.filter(t=>t.mySubscription).length} active</span></div>
         {!copyTradersLoaded ? <div className="no-results">Loading traders...</div> : copyTraders.length === 0 ? <EmptyState icon={UsersRound} title="No traders available yet" text="Check back soon — an admin hasn't added any copy traders yet."/> : <div className="trader-grid">{copyTraders.map(t=>{
           const subscribed = !!t.mySubscription;
           const left = t.mySubscription ? daysLeft(t.mySubscription.expiresAt) : 0;
           const price = Number(t.subscriptionAmount);
           return <div className="panel trader-card" key={t.id}>
-            <div className="trader-head"><span className={`trader-avatar ${t.avatarColor}`}>{t.avatarInitials}</span><span className="verified"><CheckCircle2 size={16}/> Admin verified</span></div>
-            <h3>{t.name}</h3><p>{t.handle}</p>
-            <div className="trader-return"><strong>{Number(t.returnPercent) >= 0 ? "+" : ""}{Number(t.returnPercent).toFixed(2)}%</strong><span>Reported 30-day return</span></div>
-            <div className="trader-stats"><div><span>Win rate</span><strong>{Number(t.winRate).toFixed(0)}%</strong></div><div><span>Active subscribers</span><strong>{t.activeSubscribers}</strong></div><div><span>Risk</span><strong>{t.riskLevel}</strong></div></div>
-            <div className="trader-focus">Focus: {t.focus}</div>
-            <div className="trader-return" style={{marginTop:4}}><strong>{price > 0 ? money(price) : "Free"}</strong><span>/ 7 days</span></div>
-            <button className={subscribed ? "outline-btn full-btn" : "primary-btn full-btn"} disabled={loading || !ready || subscribed || subscribingId === t.id} onClick={()=>subscribeToTrader(t)}>
-              {subscribed ? <><Check size={17}/> Subscribed · {left}d left</> : subscribingId === t.id ? "Subscribing..." : <><Copy size={17}/> Subscribe · {price > 0 ? money(price) : "Free"}</>}
-            </button>
+            <div className="trader-cover-wrap">
+              {t.photoUrl ? <img className="trader-cover-photo" src={t.photoUrl} alt={t.name} onError={e=>{(e.target as HTMLImageElement).style.display="none";}}/> : <div className={`trader-cover ${t.avatarColor}`}><span className="trader-cover-glyph">{t.avatarInitials}</span></div>}
+              <span className="trader-cover-flag" title={countryInfo(t.country).name}>{flagEmoji(t.country)}</span>
+            </div>
+            <div className="trader-body">
+              <div className="trader-name-row"><h3>{t.name}</h3><CheckCircle2 size={15} className="verified-tick"/></div>
+              <p className="trader-sub">{t.handle} · Focus: {t.focus} · {t.riskLevel} risk</p>
+              <p className="trader-bio">{t.bio}</p>
+              <div className="trader-stats-row">
+                <div><strong><Star size={12} color="#f5a623" fill="#f5a623"/> {Number(t.rating).toFixed(1)}</strong><span>Rating</span></div>
+                <div className="stat-divider"/>
+                <div><strong>{t.activeSubscribers}</strong><span>Subscribers</span></div>
+                <div className="stat-divider"/>
+                <div><strong>{price > 0 ? money(price) : "Free"}</strong><span>/ {t.subscriptionDurationDays}d</span></div>
+              </div>
+              <button className={subscribed ? "outline-btn full-btn trader-cta" : "primary-btn full-btn trader-cta"} disabled={loading || !ready || subscribed || subscribingId === t.id} onClick={()=>subscribeToTrader(t)}>
+                {subscribed ? <><Check size={17}/> Subscribed · {left}d left</> : subscribingId === t.id ? "Subscribing..." : <><Copy size={17}/> Subscribe</>}
+              </button>
+            </div>
           </div>;
         })}</div>}
         <div className="copy-note"><ShieldCheck size={19}/><span>Subscribing charges your demo cash balance and grants 7 days of access to that trader's strategy. There is no auto-renewal — resubscribe once your access expires.</span></div>
@@ -1135,7 +1186,7 @@ function HomePageInner() {
         const currentPageNum = Math.floor(notifOffset / NOTIF_PAGE_SIZE) + 1;
         return <>
           <PageTitle title={t("Notifications")} description={t("Everything NexaTrade has told you, in one place.")}>
-            {data.unreadNotifications > 0 && <button className="outline-btn" onClick={() => fetch("/api/notifications", { method: "POST" }).then(() => { refresh(); loadAllNotifications(0, notifTypeFilter); })}><Check size={16}/> Mark all read</button>}
+            {data.unreadNotifications > 0 && <button className="outline-btn" onClick={() => void markAllNotificationsRead()}><Check size={16}/> Mark all read</button>}
           </PageTitle>
           <section className="panel">
             <SectionHead title="All notifications" subtitle={`${notifTotal} total`} action={

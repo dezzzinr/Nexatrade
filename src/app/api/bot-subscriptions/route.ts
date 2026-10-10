@@ -4,7 +4,6 @@ import { botProducts, botSubscriptions, users, transactions } from "@/db/schema"
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
 import { blockedActionMessage } from "@/lib/accounts";
-import { SUBSCRIPTION_MS } from "@/lib/bots";
 import { notifyUser } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +63,8 @@ export async function POST(request: NextRequest) {
     if (existing) return bad(`You're already subscribed to ${product.name} until ${existing.expiresAt.toLocaleDateString()}.`);
 
     const amount = Number(product.subscriptionAmount);
-    const expiresAt = new Date(now.getTime() + SUBSCRIPTION_MS);
+    const durationDays = product.subscriptionDurationDays ?? 7;
+    const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
     await db.transaction(async (tx) => {
       if (amount > 0) {
@@ -73,17 +73,17 @@ export async function POST(request: NextRequest) {
         await tx.update(users).set({ cashBalance: sql`${users.cashBalance} - ${amount}` }).where(eq(users.id, user.id));
       }
       await tx.insert(botSubscriptions).values({ userId: user.id, botProductId, amount: amount.toFixed(2), startedAt: now, expiresAt });
-      await tx.insert(transactions).values({ userId: user.id, type: "bot_subscription", amount: amount.toFixed(2), description: `Trading bot: ${product.name} (7 days)` });
+      await tx.insert(transactions).values({ userId: user.id, type: "bot_subscription", amount: amount.toFixed(2), description: `Trading bot: ${product.name} (${durationDays} days)` });
     });
 
     await notifyUser({
       userId: user.id,
       type: "bot_subscribed",
       title: `Subscribed to ${product.name}`,
-      message: `You subscribed to the ${product.name} trading bot for 7 days (ends ${expiresAt.toLocaleDateString()}).`,
+      message: `You subscribed to the ${product.name} trading bot for ${durationDays} days (ends ${expiresAt.toLocaleDateString()}).`,
     });
 
-    return NextResponse.json({ success: true, expiresAt, message: `Subscribed to ${product.name} for 7 days.` });
+    return NextResponse.json({ success: true, expiresAt, message: `Subscribed to ${product.name} for ${durationDays} days.` });
   } catch (error) {
     console.error("Bot subscriptions POST:", error);
     return bad(error instanceof Error ? error.message : "Unable to subscribe. Please try again.", 400);
